@@ -415,10 +415,8 @@ export async function analyzeStudentProfile(username, profile, repos) {
   try {
     return await callGemini(prompt);
   } catch (error) {
-    if (error?.message?.includes('429') || error?.message?.includes('quota') || error?.message?.includes('rate limit')) {
-      return buildStudentFallback(username, profile, repos);
-    }
-    throw error;
+    console.warn(`Gemini student analysis unavailable; using repository-based fallback: ${error.message}`);
+    return buildStudentFallback(username, profile, repos);
   }
 }
 
@@ -428,10 +426,8 @@ export async function matchJobDescription(username, profile, technologies, jobDe
   try {
     return await callGemini(prompt);
   } catch (error) {
-    if (error?.message?.includes('429') || error?.message?.includes('quota') || error?.message?.includes('rate limit')) {
-      return buildJobMatchFallback(profile, technologies, jobDescription);
-    }
-    throw error;
+    console.warn(`Gemini job matching unavailable; using stack-based fallback: ${error.message}`);
+    return buildJobMatchFallback(profile, technologies, jobDescription);
   }
 }
 
@@ -441,9 +437,7 @@ export async function evaluateCandidateForRecruiter(username, profile, repos) {
   try {
     return await callGemini(prompt);
   } catch (error) {
-    if (error?.message?.includes('429') || error?.message?.includes('quota') || error?.message?.includes('rate limit')) {
-      return buildRecruiterFallback(username, profile, repos);
-    }
-    throw error;
+    console.warn(`Gemini recruiter evaluation unavailable; using repository-based fallback: ${error.message}`);
+    return buildRecruiterFallback(username, profile, repos);
   }
 }

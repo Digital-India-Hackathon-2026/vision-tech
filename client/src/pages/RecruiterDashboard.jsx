@@ -46,46 +46,49 @@ function RecruiterLogin() {
               <div className="auth-brand-icon">G</div>
               <div>
                 <p className="auth-kicker">Recruiter Console</p>
-                <h1>Evaluate candidates with structure, not guesswork.</h1>
+                <h1>Evaluate engineering candidates with objectivity.</h1>
               </div>
             </div>
 
             <p className="auth-description">
-              Compare public GitHub profiles, review engineering signals, and generate interview questions in one place.
+              Assess developer skills based on actual code footprints, testing coverage, documentation hygiene, and repo structure instead of resume buzzwords.
             </p>
 
             <div className="auth-highlights">
               <div className="auth-highlight-card">
+                <span className="highlight-icon">📊</span>
                 <div>
-                  <strong>Engineering Score</strong>
-                  <p>Consistent rubric for every candidate.</p>
+                  <strong>Objective Quality Rubrics</strong>
+                  <p>Evaluate code structure and development practices with a standardized 1-100 score.</p>
                 </div>
               </div>
               <div className="auth-highlight-card">
+                <span className="highlight-icon">🤖</span>
                 <div>
-                  <strong>AI Interview Prep</strong>
-                  <p>Project-specific questions in seconds.</p>
+                  <strong>AI-Powered Interview Prep</strong>
+                  <p>Instantly generate project-specific questions to test candidate expertise during technical interviews.</p>
                 </div>
               </div>
               <div className="auth-highlight-card">
+                <span className="highlight-icon">📁</span>
                 <div>
-                  <strong>Saved Reports</strong>
-                  <p>Keep your shortlist organized.</p>
+                  <strong>Centralized Candidate Reports</strong>
+                  <p>Save reports, build high-quality shortlists, and share candidates with your hiring team.</p>
                 </div>
               </div>
             </div>
 
             <div className="auth-metrics">
               <div>
-                <strong>Fast</strong>
-                <span>GitHub analysis</span>
+                <strong>Instant</strong>
+                <span>GitHub indexing</span>
               </div>
               <div>
-                <strong>Clear</strong>
-                <span>Hiring rationale</span>
+                <strong>Explainable</strong>
+                <span>Hiring recommendation</span>
               </div>
               <div>
-                <strong>Modern</strong>
+                <strong>Optimized</strong>
                 <span>Recruiter workflow</span>
               </div>
             </div>

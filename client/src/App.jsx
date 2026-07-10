@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 
 const Landing = lazy(() => import('./pages/Landing'));
@@ -38,9 +38,12 @@ class AppErrorBoundary extends React.Component {
 }
 
 function App() {
+  const location = useLocation();
+  const showNavbar = !location.pathname.startsWith('/recruiter');
+
   return (
-    <div className="app">
-      <Navbar />
+    <div className={`app ${!showNavbar ? 'no-navbar' : ''}`}>
+      {showNavbar && <Navbar />}
       <main className="main-content">
         <AppErrorBoundary>
           <Suspense fallback={

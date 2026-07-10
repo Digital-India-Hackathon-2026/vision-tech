@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { analyzeGithub, matchJobDescription } from '../api';
+import { analyzeGithubProgressive, matchJobDescription } from '../api';
 import SkeletonLoader from '../components/Skeleton';
 import RepoCard from '../components/RepoCard';
 
@@ -16,9 +16,10 @@ const PROGRESS_MESSAGES = [
 function StudentDashboard() {
   const { username } = useParams();
   const [loading, setLoading] = useState(true);
+  const [snapshot, setSnapshot] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [progressIndex, setProgressIndex] = useState(0);
+  const [analysisStage, setAnalysisStage] = useState(PROGRESS_MESSAGES[0]);
   const [jobDescription, setJobDescription] = useState('');
   const [matchLoading, setMatchLoading] = useState(false);
   const [matchResult, setMatchResult] = useState(null);
@@ -26,7 +27,19 @@ function StudentDashboard() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const result = await analyzeGithub(username);
+      setError(null);
+      setSnapshot(null);
+      setData(null);
+      setAnalysisStage(PROGRESS_MESSAGES[0]);
+      const result = await analyzeGithubProgressive(username, ({ stage, data: stageData }) => {
+        if (stage === 'basic') {
+          setSnapshot(stageData);
+          setAnalysisStage('Preparing AI insights...');
+        }
+        if (stage === 'details') {
+          setAnalysisStage('Finalizing dashboard...');
+        }
+      });
       setData(result);
     } catch (err) {
       console.error('Analysis error:', err);
@@ -40,14 +53,6 @@ function StudentDashboard() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-
-  useEffect(() => {
-    if (!loading) return;
-    const interval = setInterval(() => {
-      setProgressIndex((prev) => (prev + 1) % PROGRESS_MESSAGES.length);
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [loading]);
 
   const handleJobMatch = async () => {
     if (!jobDescription.trim()) return;
@@ -63,12 +68,52 @@ function StudentDashboard() {
   };
 
   if (loading) {
+    const previewProfile = snapshot?.profile;
+    const previewRepos = snapshot?.repositories || [];
+
     return (
       <div className="dashboard">
-        <div className="progress-messages">
-          <p className="progress-message">{PROGRESS_MESSAGES[progressIndex]}</p>
+        <div className="analysis-live">
+          <div className="analysis-live-header">
+            <p className="progress-message">{analysisStage}</p>
+            <div className="analysis-pulse">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+          {previewProfile && (
+            <div className="candidate-summary analysis-preview">
+              {previewProfile.avatar_url && (
+                <img src={previewProfile.avatar_url} alt={username} className="candidate-avatar" />
+              )}
+              <div className="candidate-info">
+                <h2>{previewProfile.name || username}</h2>
+                <div className="candidate-tags">
+                  <span className="tag tag-primary">Loading AI analysis</span>
+                  <span className="tag tag-warning">{snapshot.repoCount || previewProfile.public_repos || 0} repos</span>
+                </div>
+              </div>
+              <div className="candidate-score">
+                <div className="score-circle score-circle-loading">
+                  <span>...</span>
+                </div>
+                <p>Preparing report</p>
+              </div>
+            </div>
+          )}
+          <div className="analysis-transcript">
+            {PROGRESS_MESSAGES.slice(0, 3).map((message, index) => (
+              <div key={message} className={`analysis-step ${index === 0 ? 'done' : ''}`}>
+                <span className="analysis-step-dot"></span>
+                <span>{message}</span>
+              </div>
+            ))}
+            <div className="analysis-step active">
+              <span className="analysis-step-dot"></span>
+              <span>{analysisStage}</span>
+            </div>
+          </div>
         </div>
-        <SkeletonLoader type="dashboard" />
+        {!previewProfile && <SkeletonLoader type="dashboard" />}
       </div>
     );
   }
@@ -88,7 +133,7 @@ function StudentDashboard() {
 
   if (!data) return null;
 
-  const { profile, score, scoreReason, careerLevel, bestRole, repoCount, feedback, technologies, repositories, practices, practiceReasons, traits } = data;
+  const { profile, score, scoreReason, careerLevel, bestRole, repoCount, feedback, technologies, repositories, practices, practiceReasons, traits, suggestedRoles } = data;
 
   return (
     <div className="dashboard">
@@ -256,6 +301,16 @@ function StudentDashboard() {
             <h3>👤 Developer Profile</h3>
             <div className="card-icon" style={{ background: 'rgba(37,99,235,0.1)' }}>🎭</div>
           </div>
+          {suggestedRoles && suggestedRoles.length > 0 && (
+            <div className="feedback-section">
+              <h4 style={{ color: 'var(--info)' }}>Suggested Roles</h4>
+              <div className="profile-traits suggested-roles">
+                {suggestedRoles.map((role, i) => (
+                  <span key={i} className="trait role-chip">{role}</span>
+                ))}
+              </div>
+            </div>
+          )}
           {traits && traits.length > 0 ? (
             <div className="profile-traits">
               {traits.map((trait, i) => (

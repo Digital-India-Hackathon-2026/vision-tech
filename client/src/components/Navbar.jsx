@@ -5,9 +5,12 @@ function Navbar() {
   return (
     <nav className="navbar">
       <div className="navbar-inner">
-        <Link to="/" className="navbar-logo">
+        <Link to="/" className="navbar-logo" aria-label="GitHire AI home">
           <div className="logo-icon">G</div>
-          <span>GitHire AI</span>
+          <div className="logo-copy">
+            <span>GitHire AI</span>
+            <small>Career intelligence</small>
+          </div>
         </Link>
         <div className="navbar-links">
           <a href="/#features">Features</a>

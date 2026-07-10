@@ -40,54 +40,113 @@ function RecruiterLogin() {
   if (!token) {
     return (
       <div className="recruiter-layout">
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
-          <div className="auth-container">
-            <h2>{isLogin ? 'Recruiter Login' : 'Recruiter Sign Up'}</h2>
-            <p>{isLogin ? 'Sign in to evaluate candidates' : 'Create an account to get started'}</p>
-            {error && <div className="auth-error">{error}</div>}
-            <form onSubmit={handleAuth}>
-              {!isLogin && (
+        <div className="recruiter-auth-shell">
+          <div className="recruiter-auth-panel recruiter-auth-panel-left">
+            <div className="auth-brand">
+              <div className="auth-brand-icon">G</div>
+              <div>
+                <p className="auth-kicker">Recruiter Console</p>
+                <h1>Evaluate candidates with structure, not guesswork.</h1>
+              </div>
+            </div>
+
+            <p className="auth-description">
+              Compare public GitHub profiles, review engineering signals, and generate interview questions in one place.
+            </p>
+
+            <div className="auth-highlights">
+              <div className="auth-highlight-card">
+                <div>
+                  <strong>Engineering Score</strong>
+                  <p>Consistent rubric for every candidate.</p>
+                </div>
+              </div>
+              <div className="auth-highlight-card">
+                <div>
+                  <strong>AI Interview Prep</strong>
+                  <p>Project-specific questions in seconds.</p>
+                </div>
+              </div>
+              <div className="auth-highlight-card">
+                <div>
+                  <strong>Saved Reports</strong>
+                  <p>Keep your shortlist organized.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="auth-metrics">
+              <div>
+                <strong>Fast</strong>
+                <span>GitHub analysis</span>
+              </div>
+              <div>
+                <strong>Clear</strong>
+                <span>Hiring rationale</span>
+              </div>
+              <div>
+                <strong>Modern</strong>
+                <span>Recruiter workflow</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="recruiter-auth-panel recruiter-auth-panel-right">
+            <div className="auth-container auth-card-hero">
+              <div className="auth-card-header">
+                <div>
+                  <h2>{isLogin ? 'Recruiter Login' : 'Recruiter Sign Up'}</h2>
+                  <p>{isLogin ? 'Sign in to evaluate candidates' : 'Create an account to get started'}</p>
+                </div>
+                <span className="auth-badge">Vision Tech</span>
+              </div>
+
+              {error && <div className="auth-error">{error}</div>}
+              <form onSubmit={handleAuth}>
+                {!isLogin && (
+                  <div className="form-group">
+                    <label>Full Name</label>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="John Doe"
+                      required
+                    />
+                  </div>
+                )}
                 <div className="form-group">
-                  <label>Full Name</label>
+                  <label>Email</label>
                   <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="John Doe"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="recruiter@company.com"
                     required
                   />
                 </div>
-              )}
-              <div className="form-group">
-                <label>Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="recruiter@company.com"
-                  required
-                />
+                <div className="form-group">
+                  <label>Password</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Min 6 characters"
+                    required
+                    minLength={6}
+                  />
+                </div>
+                <button type="submit" className="btn-auth" disabled={loading}>
+                  {loading ? 'Processing...' : isLogin ? 'Sign In' : 'Create Account'}
+                </button>
+              </form>
+
+              <div className="auth-toggle">
+                {isLogin ? "Don't have an account? " : 'Already have an account? '}
+                <button onClick={() => setIsLogin(!isLogin)}>
+                  {isLogin ? 'Sign Up' : 'Sign In'}
+                </button>
               </div>
-              <div className="form-group">
-                <label>Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Min 6 characters"
-                  required
-                  minLength={6}
-                />
-              </div>
-              <button type="submit" className="btn-auth" disabled={loading}>
-                {loading ? 'Processing...' : isLogin ? 'Sign In' : 'Create Account'}
-              </button>
-            </form>
-            <div className="auth-toggle">
-              {isLogin ? "Don't have an account? " : 'Already have an account? '}
-              <button onClick={() => setIsLogin(!isLogin)}>
-                {isLogin ? 'Sign Up' : 'Sign In'}
-              </button>
             </div>
           </div>
         </div>

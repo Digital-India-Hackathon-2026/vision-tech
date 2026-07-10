@@ -44,6 +44,72 @@ router.post('/analyze', async (req, res) => {
   }
 });
 
+// Student: Quick snapshot for progressive loading
+router.post('/analyze/basic', async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username || !username.trim()) {
+      return res.status(400).json({ message: 'GitHub username is required' });
+    }
+
+    const cleanUsername = username.trim();
+    const profile = await fetchUserProfile(cleanUsername);
+    const repos = await fetchUserRepos(cleanUsername);
+
+    res.json({
+      profile,
+      repoCount: repos.length,
+      repositories: repos.slice(0, 8).map((repo) => ({
+        name: repo.name,
+        description: repo.description,
+        language: repo.language,
+        stargazers_count: repo.stargazers_count,
+        forks_count: repo.forks_count,
+        html_url: repo.html_url,
+      })),
+    });
+  } catch (error) {
+    console.error('Basic analysis error:', error.message, error.stack);
+    if (error.response?.status === 404) {
+      return res.status(404).json({ message: 'GitHub user not found' });
+    }
+    res.status(500).json({ message: `Basic analysis failed: ${error.message}` });
+  }
+});
+
+// Student: Detailed analysis payload
+router.post('/analyze/details', async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username || !username.trim()) {
+      return res.status(400).json({ message: 'GitHub username is required' });
+    }
+
+    const cleanUsername = username.trim();
+    const profile = await fetchUserProfile(cleanUsername);
+    const repos = await fetchUserRepos(cleanUsername);
+    const analyzedRepos = await Promise.all(
+      repos.slice(0, 10).map((repo) => analyzeRepository(cleanUsername, repo))
+    );
+
+    const aiResult = await analyzeStudentProfile(cleanUsername, profile, analyzedRepos);
+
+    res.json({
+      profile,
+      ...aiResult,
+    });
+  } catch (error) {
+    console.error('Detailed analysis error:', error.message, error.stack);
+    if (error.response?.status === 404) {
+      return res.status(404).json({ message: 'GitHub user not found' });
+    }
+    if (error.response?.status === 403) {
+      return res.status(429).json({ message: 'API rate limit exceeded. Please try again later.' });
+    }
+    res.status(500).json({ message: `Detailed analysis failed: ${error.message}` });
+  }
+});
+
 // Student: Match job description
 router.post('/match-job', async (req, res) => {
   try {

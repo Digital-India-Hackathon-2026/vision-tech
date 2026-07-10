@@ -101,12 +101,22 @@ function buildStudentFallback(username, profile, repos) {
   const hasTesting = repos.some((repo) => repo.hasTests);
   const hasDocs = repos.some((repo) => repo.hasReadme);
   const hasCi = repos.some((repo) => repo.hasCiCd);
+  const firstTech = technologies[0]?.name;
+  const suggestedRoles = Array.from(new Set([
+    firstTech ? `${firstTech} Developer` : 'Software Developer',
+    technologies.some((tech) => /react|next|vue|frontend|html|css/i.test(tech.name)) ? 'Frontend Developer' : null,
+    technologies.some((tech) => /node|express|nest|api|backend|spring|django|flask/i.test(tech.name)) ? 'Backend Developer' : null,
+    technologies.some((tech) => /react|node|express|mongo|full stack|typescript/i.test(tech.name)) ? 'Full Stack Developer' : null,
+    technologies.some((tech) => /ai|ml|python|tensorflow|pytorch|gemini|openai/i.test(tech.name)) ? 'AI / ML Engineer' : null,
+    technologies.some((tech) => /open source|github|docs|community/i.test(profile.bio || '') || /open source/i.test(repos.map((repo) => repo.description || '').join(' '))) ? 'Open Source Contributor' : null,
+  ].filter(Boolean)));
 
   return {
     score,
     scoreReason: `Combined repository quality (${averageScore}/100 average), profile activity (${repoCount} repos), and stack breadth (${technologies.length} technologies)`,
     careerLevel: score >= 85 ? 'Senior Developer' : score >= 65 ? 'Mid-Level Developer' : 'Junior Developer',
     bestRole: technologies[0]?.name ? `${technologies[0].name} Developer` : 'Software Developer',
+    suggestedRoles,
     repoCount,
     feedback: {
       strengths: [
@@ -249,6 +259,7 @@ Return ONLY valid JSON (no markdown, no code blocks) with this exact structure:
   "scoreReason": "<one-sentence reason for the score>",
   "careerLevel": "<Junior Developer | Mid-Level Developer | Senior Developer | Lead Developer | Principal Engineer>",
   "bestRole": "<best fitting role based on tech stack>",
+  "suggestedRoles": ["<role 1>", "<role 2>", "<role 3>"],
   "repoCount": <number>,
   "feedback": {
     "strengths": ["<strength 1>", "<strength 2>", "<strength 3>"],

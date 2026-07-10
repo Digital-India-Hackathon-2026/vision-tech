@@ -21,6 +21,31 @@ export const analyzeGithub = async (username) => {
   return data;
 };
 
+export const analyzeGithubProgressive = async (username, onUpdate) => {
+  try {
+    const basicResponse = await api.post('/analyze/basic', { username });
+    if (onUpdate) {
+      onUpdate({ stage: 'basic', data: basicResponse.data });
+    }
+
+    const detailsResponse = await api.post('/analyze/details', { username });
+    if (onUpdate) {
+      onUpdate({ stage: 'details', data: detailsResponse.data });
+    }
+
+    return detailsResponse.data;
+  } catch (error) {
+    if (error.response?.status === 404) {
+      const { data } = await api.post('/analyze', { username });
+      if (onUpdate) {
+        onUpdate({ stage: 'fallback', data });
+      }
+      return data;
+    }
+    throw error;
+  }
+};
+
 export const matchJobDescription = async (username, jobDescription) => {
   const { data } = await api.post('/match-job', { username, jobDescription });
   return data;

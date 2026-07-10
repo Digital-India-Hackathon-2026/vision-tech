@@ -202,12 +202,38 @@ router.post('/recruiter/evaluate', authMiddleware, async (req, res) => {
     );
 
     const result = await evaluateCandidateForRecruiter(cleanUsername, profile, analyzedRepos, activity);
+    const totalCommitCount = analyzedRepos.reduce((total, repo) => total + (repo.commitCount || 0), 0);
+    const commitCountAvailable = analyzedRepos.some((repo) => typeof repo.commitCount === 'number');
+    const documentationCoverage = analyzedRepos.length ? Math.round(analyzedRepos.filter((repo) => repo.hasReadme).length / analyzedRepos.length * 100) : 0;
+    const testingCoverage = analyzedRepos.length ? Math.round(analyzedRepos.filter((repo) => repo.hasTests).length / analyzedRepos.length * 100) : 0;
+    const avgCommitAgeDays = analyzedRepos.reduce((sum, repo) => sum + (typeof repo.lastCommitAgeDays === 'number' ? repo.lastCommitAgeDays : 90), 0) / Math.max(1, analyzedRepos.length);
+    const commitRecencySignal = avgCommitAgeDays <= 30 ? 'High' : avgCommitAgeDays <= 90 ? 'Moderate' : avgCommitAgeDays <= 180 ? 'Low' : 'Unknown';
+    const repoActivityScore = Math.max(
+      0,
+      Math.min(
+        100,
+        Math.round(
+          (Math.min(totalCommitCount / Math.max(1, analyzedRepos.length), 100) * 0.35) +
+          (Math.min(analyzedRepos.reduce((sum, repo) => sum + (repo.openPullRequestCount || 0), 0) / Math.max(1, analyzedRepos.length), 20) * 1.5) +
+          (Math.min(analyzedRepos.reduce((sum, repo) => sum + (repo.openIssueCount || 0), 0) / Math.max(1, analyzedRepos.length), 20) * 1) +
+          (Math.min(analyzedRepos.reduce((sum, repo) => sum + (repo.contributorCount || 0), 0) / Math.max(1, analyzedRepos.length), 10) * 5)
+        )
+      )
+    );
+    const documentationCoverageLabel = documentationCoverage >= 75 ? 'High' : documentationCoverage >= 40 ? 'Moderate' : 'Low';
+    const testingCoverageLabel = testingCoverage >= 75 ? 'High' : testingCoverage >= 40 ? 'Moderate' : 'Low';
+
     const evidence = {
       publicRepositoryCount: profile.public_repos,
       reviewedRepositoryCount: analyzedRepos.length,
-      sampledCommits: analyzedRepos.reduce((total, repo) => total + (repo.sampledCommitCount || 0), 0),
-      readmeCoverage: analyzedRepos.length ? Math.round(analyzedRepos.filter((repo) => repo.hasReadme).length / analyzedRepos.length * 100) : 0,
-      testCoverageSignal: analyzedRepos.length ? Math.round(analyzedRepos.filter((repo) => repo.hasTests).length / analyzedRepos.length * 100) : 0,
+      totalCommitCount,
+      commitCountAvailable,
+      commitRecencySignal,
+      repoActivityScore,
+      documentationCoverage,
+      documentationCoverageLabel,
+      testingCoverage,
+      testingCoverageLabel,
       deploymentCoverage: analyzedRepos.length ? Math.round(analyzedRepos.filter((repo) => repo.deploymentUrl).length / analyzedRepos.length * 100) : 0,
       contributionSource: activity.contributionSource,
     };

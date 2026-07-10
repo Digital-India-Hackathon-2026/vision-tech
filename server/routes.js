@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { fetchUserProfile, fetchUserRepos, analyzeRepository } from './github.js';
+import { fetchUserProfile, fetchUserRepos, fetchUserActivity, analyzeRepository } from './github.js';
 import { analyzeStudentProfile, matchJobDescription, evaluateCandidateForRecruiter } from './ai.js';
 import { signup, login, authMiddleware } from './auth.js';
 import { Report } from './model.js';
@@ -17,8 +17,10 @@ router.post('/analyze', async (req, res) => {
     const cleanUsername = username.trim();
 
     // Fetch GitHub data
-    const profile = await fetchUserProfile(cleanUsername);
-    const repos = await fetchUserRepos(cleanUsername);
+    const [profile, repos] = await Promise.all([
+      fetchUserProfile(cleanUsername),
+      fetchUserRepos(cleanUsername),
+    ]);
 
     // Analyze each repository in detail (limit to 10 for performance)
     const analyzedRepos = await Promise.all(
@@ -53,8 +55,10 @@ router.post('/analyze/basic', async (req, res) => {
     }
 
     const cleanUsername = username.trim();
-    const profile = await fetchUserProfile(cleanUsername);
-    const repos = await fetchUserRepos(cleanUsername);
+    const [profile, repos] = await Promise.all([
+      fetchUserProfile(cleanUsername),
+      fetchUserRepos(cleanUsername),
+    ]);
 
     res.json({
       profile,
@@ -188,17 +192,31 @@ router.post('/recruiter/evaluate', authMiddleware, async (req, res) => {
     }
 
     const cleanUsername = username.trim();
-    const profile = await fetchUserProfile(cleanUsername);
-    const repos = await fetchUserRepos(cleanUsername);
+    const [profile, repos, activity] = await Promise.all([
+      fetchUserProfile(cleanUsername),
+      fetchUserRepos(cleanUsername),
+      fetchUserActivity(cleanUsername),
+    ]);
     const analyzedRepos = await Promise.all(
       repos.slice(0, 10).map((repo) => analyzeRepository(cleanUsername, repo))
     );
 
-    const result = await evaluateCandidateForRecruiter(cleanUsername, profile, analyzedRepos);
+    const result = await evaluateCandidateForRecruiter(cleanUsername, profile, analyzedRepos, activity);
+    const evidence = {
+      publicRepositoryCount: profile.public_repos,
+      reviewedRepositoryCount: analyzedRepos.length,
+      sampledCommits: analyzedRepos.reduce((total, repo) => total + (repo.sampledCommitCount || 0), 0),
+      readmeCoverage: analyzedRepos.length ? Math.round(analyzedRepos.filter((repo) => repo.hasReadme).length / analyzedRepos.length * 100) : 0,
+      testCoverageSignal: analyzedRepos.length ? Math.round(analyzedRepos.filter((repo) => repo.hasTests).length / analyzedRepos.length * 100) : 0,
+      deploymentCoverage: analyzedRepos.length ? Math.round(analyzedRepos.filter((repo) => repo.deploymentUrl).length / analyzedRepos.length * 100) : 0,
+      contributionSource: activity.contributionSource,
+    };
 
     res.json({
       profile,
+      activity,
       ...result,
+      evidence: { ...evidence, ...(result.evidence || {}) },
     });
   } catch (error) {
     console.error('Evaluation error:', error.message);

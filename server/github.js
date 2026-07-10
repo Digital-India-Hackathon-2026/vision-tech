@@ -34,7 +34,8 @@ export async function fetchUserProfile(username) {
   if (cached) return cached;
 
   const { data } = await githubClient.get(`/users/${username}`);
-  return {
+
+  const profile = {
     login: data.login,
     name: data.name,
     avatar_url: data.avatar_url,
@@ -45,6 +46,11 @@ export async function fetchUserProfile(username) {
     created_at: data.created_at,
     html_url: data.html_url,
   };
+
+  // Store in cache
+  setCache(cacheKey, profile);
+
+  return profile;
 }
 
 export async function fetchUserRepos(username) {
@@ -167,4 +173,26 @@ export async function analyzeRepository(username, repo) {
     technologies: Object.keys(languages),
     reason: reasonParts.length > 0 ? reasonParts.join(' · ') : 'Repository analyzed from public GitHub metadata',
   };
+}
+
+export async function fetchUserActivity(username) {
+  try {
+    const { data } = await githubClient.get(`/users/${username}/events/public`);
+
+    return {
+      contributionSource: "GitHub Public Events",
+      totalEvents: data.length,
+      recentEvents: data.slice(0, 10).map(event => ({
+        type: event.type,
+        repo: event.repo?.name,
+        createdAt: event.created_at,
+      })),
+    };
+  } catch (error) {
+    return {
+      contributionSource: "Unavailable",
+      totalEvents: 0,
+      recentEvents: [],
+    };
+  }
 }

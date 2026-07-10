@@ -26,6 +26,7 @@ function RepoCard({ repo }) {
           ))}
         </div>
       )}
+      {repo.reason && <p className="reason-copy compact">{repo.reason}</p>}
       <div className="repo-meta">
         <span>Complexity: {getComplexityLabel(repo.complexity || 0)}</span>
         <span>

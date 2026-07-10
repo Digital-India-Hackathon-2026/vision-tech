@@ -658,6 +658,14 @@ input, textarea { font-family: inherit; }
   margin-top: var(--sp-2);
 }
 
+.score-reason {
+  margin-top: var(--sp-2);
+  max-width: 220px;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
 /* Dashboard Grid */
 .dashboard-grid {
   display: grid;
@@ -864,6 +872,19 @@ input, textarea { font-family: inherit; }
   border: 1px solid transparent;
 }
 
+.practice-item-stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.practice-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .practice-name {
   font-size: 0.8125rem;
   font-weight: 500;
@@ -896,6 +917,84 @@ input, textarea { font-family: inherit; }
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-2);
+}
+
+.reason-copy {
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+.reason-copy.compact {
+  margin-top: 4px;
+}
+
+.reason-copy.center {
+  text-align: center;
+  margin-top: 8px;
+}
+
+.comparison-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-5);
+}
+
+.comparison-form input {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-5);
+}
+
+.comparison-summary h4 {
+  margin-bottom: var(--sp-3);
+  font-size: 1rem;
+}
+
+.comparison-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+
+.comparison-metrics div {
+  background: var(--bg-alt);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-sm);
+  padding: var(--sp-3);
+}
+
+.comparison-metric-label {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.comparison-metrics strong {
+  font-size: 0.95rem;
+}
+
+@media (max-width: 900px) {
+  .comparison-form,
+  .comparison-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .comparison-metrics {
+    grid-template-columns: 1fr;
+  }
 }
 
 .trait {

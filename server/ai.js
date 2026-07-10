@@ -85,6 +85,7 @@ function buildRepoInsights(repos) {
       technologies: technologies.slice(0, 5),
       complexity,
       engineeringRating: Math.max(1, Math.min(10, Math.round(repoScore / 10))),
+      reason: repo.reason || 'Derived from stars, forks, documentation, tests, CI/CD, and language breadth',
     };
   });
 }
@@ -103,6 +104,7 @@ function buildStudentFallback(username, profile, repos) {
 
   return {
     score,
+    scoreReason: `Combined repository quality (${averageScore}/100 average), profile activity (${repoCount} repos), and stack breadth (${technologies.length} technologies)`,
     careerLevel: score >= 85 ? 'Senior Developer' : score >= 65 ? 'Mid-Level Developer' : 'Junior Developer',
     bestRole: technologies[0]?.name ? `${technologies[0].name} Developer` : 'Software Developer',
     repoCount,
@@ -137,6 +139,18 @@ function buildStudentFallback(username, profile, repos) {
       Testing: hasTesting ? 'Good' : 'Needs Improvement',
       Documentation: hasDocs ? 'Good' : 'Needs Improvement',
     },
+    practiceReasons: {
+      Authentication: hasCi ? 'Public workflows or automation were detected.' : 'No clear authentication-focused implementation was detected in public metadata.',
+      'REST APIs': technologies.some((tech) => /express|fastify|nestjs|flask|django|spring/i.test(tech.name)) ? 'Backend web framework patterns were detected.' : 'No obvious API framework evidence was found in the repository metadata.',
+      'MVC Architecture': repos.some((repo) => repo.hasReadme) ? 'Readable project structure and documentation suggest organized separation.' : 'Insufficient structure signals were available from public metadata.',
+      'Database Integration': technologies.some((tech) => /mongo|sql|prisma|sequelize|mongoose|postgres|mysql/i.test(tech.name)) ? 'Database-related technologies were detected in the stack.' : 'No database technology signals were detected.',
+      'Error Handling': hasTesting ? 'Testing presence indicates better handling discipline.' : 'Testing signals were weak, so reliability is uncertain.',
+      'Input Validation': hasTesting ? 'Validation is more likely when automated testing exists.' : 'Validation evidence was not strong enough to confirm.',
+      'Environment Variables': repos.some((repo) => repo.hasConfigFiles) ? 'Configuration files suggest environment setup awareness.' : 'No .env example or config file signals were detected.',
+      Deployment: hasCi ? 'CI/CD indicators suggest deployment maturity.' : 'No deployment automation was visible in public metadata.',
+      Testing: hasTesting ? 'Test folders or specs were detected.' : 'No test directory pattern was detected.',
+      Documentation: hasDocs ? 'README content was present.' : 'README evidence was missing or limited.',
+    },
     traits: [
       score >= 80 ? 'High-ownership builder' : 'Pragmatic builder',
       technologies[0]?.name ? `${technologies[0].name} focused` : 'Generalist profile',
@@ -164,6 +178,7 @@ function buildJobMatchFallback(profile, technologies, jobDescription) {
 
   return {
     matchPercentage,
+    matchReason: overlap > 0 ? `Matched ${strongSkills.length} clearly relevant technologies against the job description.` : 'The match was estimated from general stack overlap and job keywords.',
     strongSkills: strongSkills.length > 0 ? strongSkills : technologies.slice(0, 3).map((tech) => tech.name),
     missingSkills: missingSkills.length > 0 ? missingSkills : ['job-specific requirements not fully covered'],
   };
@@ -182,6 +197,7 @@ function buildRecruiterFallback(username, profile, repos) {
   return {
     hireScore,
     engineeringScore,
+    hireReason: `Hiring score is based on average repository quality (${avgRepoScore}/100), repository activity (${repos.length} repos), and stack breadth (${technologies.length} technologies).`,
     careerLevel: hireScore >= 85 ? 'Senior' : hireScore >= 65 ? 'Mid-Level' : 'Junior',
     bestRole: technologies[0]?.name ? `${technologies[0].name} Engineer` : 'Software Engineer',
     experienceLevel,
@@ -196,6 +212,7 @@ function buildRecruiterFallback(username, profile, repos) {
       name: repo.name,
       score: repo.score,
       technologies: repo.technologies,
+      reason: repo.reason,
     })),
     interviewQuestions: repositories.slice(0, 5).map((repo) => ({
       repository: repo.name,
@@ -229,6 +246,7 @@ ${repoSummary}
 Return ONLY valid JSON (no markdown, no code blocks) with this exact structure:
 {
   "score": <number 0-100>,
+  "scoreReason": "<one-sentence reason for the score>",
   "careerLevel": "<Junior Developer | Mid-Level Developer | Senior Developer | Lead Developer | Principal Engineer>",
   "bestRole": "<best fitting role based on tech stack>",
   "repoCount": <number>,
@@ -246,7 +264,8 @@ Return ONLY valid JSON (no markdown, no code blocks) with this exact structure:
       "score": <0-100>,
       "technologies": ["<tech1>", "<tech2>"],
       "complexity": <0-10>,
-      "engineeringRating": <0-10>
+      "engineeringRating": <0-10>,
+      "reason": "<one-sentence reason for the repository score>"
     }
   ],
   "practices": {
@@ -283,6 +302,7 @@ ${jobDescription}
 Return ONLY valid JSON (no markdown, no code blocks) with this exact structure:
 {
   "matchPercentage": <0-100>,
+  "matchReason": "<one-sentence reason for the match>",
   "strongSkills": ["<skill 1>", "<skill 2>"],
   "missingSkills": ["<skill 1>", "<skill 2>"]
 }
@@ -314,6 +334,7 @@ Return ONLY valid JSON (no markdown, no code blocks) with this exact structure:
 {
   "hireScore": <0-100>,
   "engineeringScore": <0-100>,
+  "hireReason": "<one-sentence reason for the hire score>",
   "careerLevel": "<Junior | Mid-Level | Senior | Lead>",
   "bestRole": "<best fitting role>",
   "experienceLevel": "<Fresher | Experienced>",
@@ -328,7 +349,8 @@ Return ONLY valid JSON (no markdown, no code blocks) with this exact structure:
     {
       "name": "<repo name>",
       "score": <0-100>,
-      "technologies": ["<tech1>", "<tech2>"]
+      "technologies": ["<tech1>", "<tech2>"],
+      "reason": "<one-sentence reason for the repository score>"
     }
   ],
   "interviewQuestions": [

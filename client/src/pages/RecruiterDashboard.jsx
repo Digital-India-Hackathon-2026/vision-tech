@@ -117,6 +117,12 @@ function RecruiterLogin() {
           >
             <span>⚙️</span> Settings
           </button>
+          <button
+            className={`sidebar-item ${activeTab === 'compare' ? 'active' : ''}`}
+            onClick={() => setActiveTab('compare')}
+          >
+            <span>🆚</span> Compare
+          </button>
           <div style={{ marginTop: 'auto', padding: '1rem', borderTop: '1px solid var(--border-color)', margin: '1rem' }}>
             <button
               className="sidebar-item"
@@ -132,6 +138,7 @@ function RecruiterLogin() {
       <main className="recruiter-content">
         {activeTab === 'evaluate' && <CandidateEvaluation />}
         {activeTab === 'reports' && <SavedReports />}
+        {activeTab === 'compare' && <CandidateComparison />}
         {activeTab === 'settings' && <Settings />}
       </main>
     </div>
@@ -236,19 +243,20 @@ function CandidateEvaluation() {
                   {data.experienceLevel && <span className="tag tag-warning">{data.experienceLevel}</span>}
                 </div>
               </div>
-              {data.hireScore && (
+              {data.hireScore != null && (
                 <div className="candidate-score">
                   <div className="score-circle" style={{ '--score': `${data.hireScore}%` }}>
                     <span>{data.hireScore}</span>
                   </div>
                   <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Hire Score</p>
+                  {data.hireReason && <div className="score-reason">{data.hireReason}</div>}
                 </div>
               )}
             </div>
           </div>
 
           {/* Hire Recommendation */}
-          {data.hireScore && (
+          {data.hireScore != null && (
             <div className="dashboard-card">
               <div className="card-header">
                 <h3>📋 Hiring Recommendation</h3>
@@ -267,7 +275,7 @@ function CandidateEvaluation() {
                 }}>
                   {getHireRecommendation(data.hireScore).label}
                 </div>
-                {data.engineeringScore && (
+                {data.engineeringScore != null && (
                   <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.5rem' }}>
                     Engineering Score: {data.engineeringScore}/100
                   </p>
@@ -284,15 +292,18 @@ function CandidateEvaluation() {
               </div>
               <div className="practices-grid">
                 {Object.entries(data.frameworkScores).map(([key, value]) => (
-                  <div key={key} className="practice-item">
-                    <span className="practice-name">{key}</span>
-                    <span style={{
-                      fontSize: '0.85rem',
-                      fontWeight: 600,
-                      color: value >= 80 ? 'var(--success)' : value >= 50 ? 'var(--warning)' : 'var(--danger)',
-                    }}>
-                      {value}/100
-                    </span>
+                  <div key={key} className="practice-item practice-item-stack">
+                    <div className="practice-row">
+                      <span className="practice-name">{key}</span>
+                      <span style={{
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        color: value >= 80 ? 'var(--success)' : value >= 50 ? 'var(--warning)' : 'var(--danger)',
+                      }}>
+                        {value}/100
+                      </span>
+                    </div>
+                    {data.practiceReasons?.[key] && <p className="reason-copy compact">{data.practiceReasons[key]}</p>}
                   </div>
                 ))}
               </div>
@@ -319,6 +330,7 @@ function CandidateEvaluation() {
                         ))}
                       </div>
                     )}
+                    {repo.reason && <p className="reason-copy compact">{repo.reason}</p>}
                   </div>
                 ))}
               </div>
@@ -414,6 +426,107 @@ function SavedReports() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CandidateComparison() {
+  const [leftUsername, setLeftUsername] = useState('');
+  const [rightUsername, setRightUsername] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [leftData, setLeftData] = useState(null);
+  const [rightData, setRightData] = useState(null);
+
+  const handleCompare = async () => {
+    if (!leftUsername.trim() || !rightUsername.trim()) return;
+    setLoading(true);
+    setError(null);
+    setLeftData(null);
+    setRightData(null);
+
+    try {
+      const [leftResult, rightResult] = await Promise.all([
+        evaluateCandidate(leftUsername.trim()),
+        evaluateCandidate(rightUsername.trim()),
+      ]);
+      setLeftData(leftResult);
+      setRightData(rightResult);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to compare candidates');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderComparisonCard = (title, data, username) => {
+    if (!data) return null;
+
+    return (
+      <div className="dashboard-card">
+        <div className="card-header">
+          <h3>{title}</h3>
+        </div>
+        <div className="comparison-summary">
+          <h4>{data.profile?.name || username}</h4>
+          <div className="comparison-metrics">
+            <div>
+              <span className="comparison-metric-label">Hire Score</span>
+              <strong>{data.hireScore ?? 'N/A'}</strong>
+            </div>
+            <div>
+              <span className="comparison-metric-label">Engineering</span>
+              <strong>{data.engineeringScore ?? 'N/A'}</strong>
+            </div>
+            <div>
+              <span className="comparison-metric-label">Best Role</span>
+              <strong>{data.bestRole || 'N/A'}</strong>
+            </div>
+          </div>
+          {data.hireReason && <p className="reason-copy">{data.hireReason}</p>}
+          {data.repositories && data.repositories.length > 0 && (
+            <div className="repo-list" style={{ marginTop: '1rem' }}>
+              {data.repositories.slice(0, 3).map((repo) => (
+                <div key={repo.name} className="repo-card">
+                  <div className="repo-card-header">
+                    <span className="repo-name">{repo.name}</span>
+                    <span className="repo-score">{repo.score}/100</span>
+                  </div>
+                  {repo.reason && <p className="reason-copy compact">{repo.reason}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ maxWidth: '1100px' }}>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem' }}>Candidate Comparison</h2>
+      <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
+        Compare two candidates side-by-side using the recruiter framework
+      </p>
+
+      <div className="comparison-form">
+        <input type="text" placeholder="First GitHub username..." value={leftUsername} onChange={(e) => setLeftUsername(e.target.value)} />
+        <input type="text" placeholder="Second GitHub username..." value={rightUsername} onChange={(e) => setRightUsername(e.target.value)} />
+        <button className="btn-evaluate" onClick={handleCompare} disabled={loading || !leftUsername.trim() || !rightUsername.trim()}>
+          {loading ? 'Comparing...' : 'Compare Candidates'}
+        </button>
+      </div>
+
+      {error && <div className="auth-error" style={{ marginTop: '1rem' }}>{error}</div>}
+
+      {loading && <SkeletonLoader type="candidate" />}
+
+      {(leftData || rightData) && (
+        <div className="comparison-grid">
+          {renderComparisonCard('Candidate A', leftData, leftUsername.trim())}
+          {renderComparisonCard('Candidate B', rightData, rightUsername.trim())}
         </div>
       )}
     </div>

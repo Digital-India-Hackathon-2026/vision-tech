@@ -88,7 +88,7 @@ function StudentDashboard() {
 
   if (!data) return null;
 
-  const { profile, score, careerLevel, bestRole, repoCount, feedback, technologies, repositories, practices, traits } = data;
+  const { profile, score, scoreReason, careerLevel, bestRole, repoCount, feedback, technologies, repositories, practices, practiceReasons, traits } = data;
 
   return (
     <div className="dashboard">
@@ -112,6 +112,7 @@ function StudentDashboard() {
                 <span>{score}</span>
               </div>
               <p>Overall Score</p>
+              {scoreReason && <div className="score-reason">{scoreReason}</div>}
             </div>
           )}
         </div>
@@ -161,6 +162,12 @@ function StudentDashboard() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+            {scoreReason && (
+              <div className="feedback-section">
+                <h4 style={{ color: 'var(--text-secondary)' }}>Why this score?</h4>
+                <p className="reason-copy">{scoreReason}</p>
               </div>
             )}
           </div>
@@ -227,11 +234,14 @@ function StudentDashboard() {
           {practices && Object.keys(practices).length > 0 ? (
             <div className="practices-grid">
               {Object.entries(practices).map(([key, value]) => (
-                <div key={key} className="practice-item">
-                  <span className="practice-name">{key}</span>
-                  <span className={`practice-status ${value === 'Excellent' ? 'excellent' : value === 'Good' ? 'good' : 'needs-improvement'}`}>
-                    {value}
-                  </span>
+                <div key={key} className="practice-item practice-item-stack">
+                  <div className="practice-row">
+                    <span className="practice-name">{key}</span>
+                    <span className={`practice-status ${value === 'Excellent' ? 'excellent' : value === 'Good' ? 'good' : 'needs-improvement'}`}>
+                      {value}
+                    </span>
+                  </div>
+                  {practiceReasons?.[key] && <p className="reason-copy compact">{practiceReasons[key]}</p>}
                 </div>
               ))}
             </div>
@@ -288,6 +298,7 @@ function StudentDashboard() {
                         <p style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1rem' }}>
                           Job Match
                         </p>
+                        {matchResult.matchReason && <p className="reason-copy center">{matchResult.matchReason}</p>}
                       </>
                     )}
                     <div className="match-skills-grid">

@@ -2,7 +2,207 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-const MODEL_NAME = 'gemini-1.5-pro';
+const MODEL_CANDIDATES = [
+  'gemini-3.5-flash',
+  'gemini-flash-latest',
+  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash-lite',
+  'gemini-2.0-flash',
+];
+
+function extractJsonText(text) {
+  let cleaned = text.trim();
+
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/```(?:json)?\s*/gi, '').replace(/```$/g, '').trim();
+  }
+
+  const firstBrace = cleaned.indexOf('{');
+  const firstBracket = cleaned.indexOf('[');
+
+  let startIndex = -1;
+  if (firstBrace === -1) {
+    startIndex = firstBracket;
+  } else if (firstBracket === -1) {
+    startIndex = firstBrace;
+  } else {
+    startIndex = Math.min(firstBrace, firstBracket);
+  }
+
+  if (startIndex > 0) {
+    cleaned = cleaned.slice(startIndex).trim();
+  }
+
+  return cleaned;
+}
+
+function getTopTechnologies(repos, limit = 6) {
+  const techMap = new Map();
+
+  repos.forEach((repo) => {
+    (repo.technologies || []).forEach((tech) => {
+      techMap.set(tech, (techMap.get(tech) || 0) + 1);
+    });
+  });
+
+  const maxCount = Math.max(...techMap.values(), 1);
+
+  return Array.from(techMap.entries())
+    .map(([name, count]) => ({
+      name,
+      confidence: Math.round((count / maxCount) * 100),
+    }))
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, limit);
+}
+
+function scoreRepository(repo) {
+  let score = 35;
+
+  score += Math.min((repo.stargazers_count || 0) * 4, 20);
+  score += Math.min((repo.forks_count || 0) * 3, 10);
+  score += repo.hasReadme ? 12 : 0;
+  score += repo.hasTests ? 12 : 0;
+  score += repo.hasCiCd ? 8 : 0;
+  score += repo.hasLicense ? 3 : 0;
+  score += Object.keys(repo.languages || {}).length > 1 ? 5 : 0;
+
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function buildRepoInsights(repos) {
+  return repos.slice(0, 10).map((repo) => {
+    const technologies = repo.technologies || [];
+    const repoScore = scoreRepository(repo);
+    const complexity = Math.max(
+      1,
+      Math.min(10, Math.round((technologies.length || 1) + (repo.hasTests ? 2 : 0) + (repo.hasCiCd ? 1 : 0)))
+    );
+
+    return {
+      name: repo.name,
+      score: repoScore,
+      technologies: technologies.slice(0, 5),
+      complexity,
+      engineeringRating: Math.max(1, Math.min(10, Math.round(repoScore / 10))),
+    };
+  });
+}
+
+function buildStudentFallback(username, profile, repos) {
+  const technologies = getTopTechnologies(repos);
+  const repositories = buildRepoInsights(repos).sort((a, b) => b.score - a.score);
+  const repoCount = repos.length;
+  const averageScore = repositories.length
+    ? Math.round(repositories.reduce((sum, repo) => sum + repo.score, 0) / repositories.length)
+    : 0;
+  const score = Math.max(25, Math.min(95, Math.round((averageScore + Math.min(repoCount * 4, 20) + Math.min(technologies.length * 3, 15)) / 2)));
+  const hasTesting = repos.some((repo) => repo.hasTests);
+  const hasDocs = repos.some((repo) => repo.hasReadme);
+  const hasCi = repos.some((repo) => repo.hasCiCd);
+
+  return {
+    score,
+    careerLevel: score >= 85 ? 'Senior Developer' : score >= 65 ? 'Mid-Level Developer' : 'Junior Developer',
+    bestRole: technologies[0]?.name ? `${technologies[0].name} Developer` : 'Software Developer',
+    repoCount,
+    feedback: {
+      strengths: [
+        `Public repos: ${repoCount}`,
+        hasDocs ? 'Projects include documentation' : 'Projects are available for review',
+        technologies.length > 0 ? `Primary stack: ${technologies.slice(0, 3).map((tech) => tech.name).join(', ')}` : 'Clear public GitHub presence',
+      ],
+      weaknesses: [
+        hasTesting ? 'Some repositories already include tests' : 'Testing coverage is limited',
+        hasCi ? 'CI/CD is partially present' : 'CI/CD automation is limited',
+        repos.length > 0 ? 'Repository depth varies across projects' : 'No repositories available for analysis',
+      ],
+      suggestions: [
+        'Add automated tests to the most important repositories',
+        'Document setup and usage in each README',
+        'Showcase deployment or CI/CD on at least one project',
+      ],
+    },
+    technologies,
+    repositories,
+    practices: {
+      Authentication: hasCi ? 'Good' : 'Needs Improvement',
+      'REST APIs': technologies.some((tech) => /express|fastify|nestjs|flask|django|spring/i.test(tech.name)) ? 'Good' : 'Needs Improvement',
+      'MVC Architecture': repos.some((repo) => repo.hasReadme) ? 'Good' : 'Needs Improvement',
+      'Database Integration': technologies.some((tech) => /mongo|sql|prisma|sequelize|mongoose|postgres|mysql/i.test(tech.name)) ? 'Good' : 'Needs Improvement',
+      'Error Handling': hasTesting ? 'Good' : 'Needs Improvement',
+      'Input Validation': hasTesting ? 'Good' : 'Needs Improvement',
+      'Environment Variables': repos.some((repo) => repo.hasConfigFiles) ? 'Good' : 'Needs Improvement',
+      Deployment: hasCi ? 'Good' : 'Needs Improvement',
+      Testing: hasTesting ? 'Good' : 'Needs Improvement',
+      Documentation: hasDocs ? 'Good' : 'Needs Improvement',
+    },
+    traits: [
+      score >= 80 ? 'High-ownership builder' : 'Pragmatic builder',
+      technologies[0]?.name ? `${technologies[0].name} focused` : 'Generalist profile',
+      hasDocs ? 'Documentation-aware' : 'Fast-moving',
+      hasTesting ? 'Quality-oriented' : 'Prototype-oriented',
+      repos.length >= 5 ? 'Consistent contributor' : 'Early-stage portfolio',
+    ],
+  };
+}
+
+function buildJobMatchFallback(profile, technologies, jobDescription) {
+  const normalizedJob = jobDescription.toLowerCase();
+  const techNames = technologies.map((tech) => tech.name.toLowerCase());
+  const strongSkills = technologies
+    .filter((tech) => normalizedJob.includes(tech.name.toLowerCase()) || tech.confidence >= 60)
+    .map((tech) => tech.name)
+    .slice(0, 5);
+  const missingSkills = Array.from(new Set(
+    ['testing', 'deployment', 'system design', 'apis', 'databases', 'authentication']
+      .filter((skill) => normalizedJob.includes(skill) && !techNames.some((name) => name.includes(skill)))
+  )).slice(0, 5);
+
+  const overlap = strongSkills.length;
+  const matchPercentage = Math.max(20, Math.min(95, Math.round((overlap / Math.max(technologies.length || 1, 3)) * 100)));
+
+  return {
+    matchPercentage,
+    strongSkills: strongSkills.length > 0 ? strongSkills : technologies.slice(0, 3).map((tech) => tech.name),
+    missingSkills: missingSkills.length > 0 ? missingSkills : ['job-specific requirements not fully covered'],
+  };
+}
+
+function buildRecruiterFallback(username, profile, repos) {
+  const technologies = getTopTechnologies(repos);
+  const repositories = buildRepoInsights(repos).sort((a, b) => b.score - a.score);
+  const avgRepoScore = repositories.length
+    ? Math.round(repositories.reduce((sum, repo) => sum + repo.score, 0) / repositories.length)
+    : 0;
+  const hireScore = Math.max(20, Math.min(95, Math.round((avgRepoScore + Math.min(repos.length * 4, 20) + Math.min(technologies.length * 3, 15)) / 2)));
+  const engineeringScore = Math.max(20, Math.min(95, Math.round((hireScore + avgRepoScore) / 2)));
+  const experienceLevel = repos.length >= 8 || hireScore >= 70 ? 'Experienced' : 'Fresher';
+
+  return {
+    hireScore,
+    engineeringScore,
+    careerLevel: hireScore >= 85 ? 'Senior' : hireScore >= 65 ? 'Mid-Level' : 'Junior',
+    bestRole: technologies[0]?.name ? `${technologies[0].name} Engineer` : 'Software Engineer',
+    experienceLevel,
+    frameworkScores: {
+      'Project Quality': Math.min(100, avgRepoScore),
+      'Engineering Practices': Math.min(100, Math.max(30, avgRepoScore - 5)),
+      'Learning Curve': Math.min(100, 40 + technologies.length * 8),
+      'Documentation': Math.min(100, repos.some((repo) => repo.hasReadme) ? 75 : 35),
+      'Activity': Math.min(100, 40 + Math.min(repos.length * 6, 40)),
+    },
+    repositories: repositories.map((repo) => ({
+      name: repo.name,
+      score: repo.score,
+      technologies: repo.technologies,
+    })),
+    interviewQuestions: repositories.slice(0, 5).map((repo) => ({
+      repository: repo.name,
+      question: `What trade-offs did you consider while building ${repo.name}?`,
+    })),
+  };
+}
 
 function getStudentPrompt(username, profile, repos) {
   const repoSummary = repos
@@ -145,31 +345,72 @@ For Experienced use: Architecture (20%), Engineering (25%), Open Source (20%), D
 }
 
 async function callGemini(prompt) {
-  const model = genAI.getGenerativeModel({ model: MODEL_NAME });
-  const result = await model.generateContent(prompt);
-  const response = result.response;
-  const text = response.text().trim();
+  let lastError = null;
 
-  // Clean up markdown code blocks if present
-  let cleaned = text;
-  if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/```(json)?\n?/g, '').trim();
+  for (const modelName of MODEL_CANDIDATES) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(prompt);
+      const response = result.response;
+      const text = response.text();
+
+      const cleaned = extractJsonText(text);
+
+      return JSON.parse(cleaned);
+    } catch (error) {
+      lastError = error;
+      const status = error?.status || error?.response?.status;
+      if (status === 429 || /quota|rate limit/i.test(error?.message || '')) {
+        break;
+      }
+      if (status && ![404, 503].includes(status)) {
+        break;
+      }
+    }
   }
 
-  return JSON.parse(cleaned);
+  if (lastError instanceof SyntaxError) {
+    throw new Error(`Gemini returned invalid JSON: ${lastError.message}`);
+  }
+
+  throw lastError || new Error('Gemini request failed');
 }
 
 export async function analyzeStudentProfile(username, profile, repos) {
   const prompt = getStudentPrompt(username, profile, repos);
-  return await callGemini(prompt);
+
+  try {
+    return await callGemini(prompt);
+  } catch (error) {
+    if (error?.message?.includes('429') || error?.message?.includes('quota') || error?.message?.includes('rate limit')) {
+      return buildStudentFallback(username, profile, repos);
+    }
+    throw error;
+  }
 }
 
 export async function matchJobDescription(username, profile, technologies, jobDescription) {
   const prompt = getJobMatchPrompt(username, profile, technologies, jobDescription);
-  return await callGemini(prompt);
+
+  try {
+    return await callGemini(prompt);
+  } catch (error) {
+    if (error?.message?.includes('429') || error?.message?.includes('quota') || error?.message?.includes('rate limit')) {
+      return buildJobMatchFallback(profile, technologies, jobDescription);
+    }
+    throw error;
+  }
 }
 
 export async function evaluateCandidateForRecruiter(username, profile, repos) {
   const prompt = getRecruiterPrompt(username, profile, repos);
-  return await callGemini(prompt);
+
+  try {
+    return await callGemini(prompt);
+  } catch (error) {
+    if (error?.message?.includes('429') || error?.message?.includes('quota') || error?.message?.includes('rate limit')) {
+      return buildRecruiterFallback(username, profile, repos);
+    }
+    throw error;
+  }
 }

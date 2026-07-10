@@ -1,6 +1,8 @@
 import axios from 'axios';
 
 const GITHUB_API = 'https://api.github.com';
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const requestCache = new Map();
 
 const githubClient = axios.create({
   baseURL: GITHUB_API,
@@ -12,7 +14,25 @@ const githubClient = axios.create({
   },
 });
 
+function getCache(key) {
+  const cached = requestCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.timestamp > CACHE_TTL_MS) {
+    requestCache.delete(key);
+    return null;
+  }
+  return cached.value;
+}
+
+function setCache(key, value) {
+  requestCache.set(key, { timestamp: Date.now(), value });
+}
+
 export async function fetchUserProfile(username) {
+  const cacheKey = `profile:${username}`;
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+
   const { data } = await githubClient.get(`/users/${username}`);
   return {
     login: data.login,
@@ -28,8 +48,12 @@ export async function fetchUserProfile(username) {
 }
 
 export async function fetchUserRepos(username) {
+  const cacheKey = `repos:${username}`;
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+
   const { data } = await githubClient.get(`/users/${username}/repos?per_page=100&sort=updated&direction=desc`);
-  return data.map((repo) => ({
+  const repos = data.map((repo) => ({
     id: repo.id,
     name: repo.name,
     description: repo.description,
@@ -48,11 +72,19 @@ export async function fetchUserRepos(username) {
     has_wiki: repo.has_wiki,
     has_pages: repo.has_pages,
   }));
+
+  setCache(cacheKey, repos);
+  return repos;
 }
 
 export async function fetchRepoLanguages(username, repoName) {
   try {
+    const cacheKey = `languages:${username}/${repoName}`;
+    const cached = getCache(cacheKey);
+    if (cached) return cached;
+
     const { data } = await githubClient.get(`/repos/${username}/${repoName}/languages`);
+    setCache(cacheKey, data);
     return data;
   } catch {
     return {};
@@ -61,9 +93,14 @@ export async function fetchRepoLanguages(username, repoName) {
 
 export async function fetchRepoReadme(username, repoName) {
   try {
+    const cacheKey = `readme:${username}/${repoName}`;
+    const cached = getCache(cacheKey);
+    if (cached) return cached;
+
     const { data } = await githubClient.get(`/repos/${username}/${repoName}/readme`);
     // Decode base64 content
     const content = Buffer.from(data.content, 'base64').toString('utf-8');
+    setCache(cacheKey, content);
     return content;
   } catch {
     return null;
@@ -72,7 +109,12 @@ export async function fetchRepoReadme(username, repoName) {
 
 export async function fetchRepoContents(username, repoName, path = '') {
   try {
+    const cacheKey = `contents:${username}/${repoName}/${path}`;
+    const cached = getCache(cacheKey);
+    if (cached) return cached;
+
     const { data } = await githubClient.get(`/repos/${username}/${repoName}/contents/${path}`);
+    setCache(cacheKey, data);
     return data;
   } catch {
     return [];
@@ -108,6 +150,11 @@ export async function analyzeRepository(username, repo) {
     (item) =>
       item.name === '.github' || item.name === '.gitlab-ci.yml' || item.name === '.circleci'
   );
+  const reasonParts = [];
+  if (hasReadme) reasonParts.push('README present');
+  if (hasTests) reasonParts.push('tests detected');
+  if (hasCiCd) reasonParts.push('CI/CD files detected');
+  if (Object.keys(languages).length > 0) reasonParts.push(`languages: ${Object.keys(languages).slice(0, 3).join(', ')}`);
 
   return {
     ...repo,
@@ -118,5 +165,6 @@ export async function analyzeRepository(username, repo) {
     hasConfigFiles,
     hasCiCd,
     technologies: Object.keys(languages),
+    reason: reasonParts.length > 0 ? reasonParts.join(' · ') : 'Repository analyzed from public GitHub metadata',
   };
 }

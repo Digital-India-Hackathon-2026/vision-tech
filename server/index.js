@@ -3,23 +3,38 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import mongoose from 'mongoose';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import routes from './routes.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const clientDistPath = path.resolve(__dirname, '../client/dist');
+const clientIndexPath = path.join(clientDistPath, 'index.html');
+const hasClientBuild = fs.existsSync(clientIndexPath);
+const allowedOrigins = process.env.NODE_ENV === 'production'
+  ? (process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',').map((origin) => origin.trim()).filter(Boolean) : [])
+  : ['http://localhost:5173', 'http://localhost:3000'];
 
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? process.env.CLIENT_URL 
-    : ['http://localhost:5173', 'http://localhost:3000'],
+  origin: allowedOrigins,
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
 
 // Routes
 app.use('/api', routes);
+
+if (hasClientBuild) {
+  app.use(express.static(clientDistPath));
+  app.get(/^\/(?!api|health).*/, (req, res) => {
+    res.sendFile(clientIndexPath);
+  });
+}
 
 // Health check
 app.get('/health', (req, res) => {

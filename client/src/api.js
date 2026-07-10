@@ -7,6 +7,15 @@ const api = axios.create({
   timeout: 120000,
 });
 
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('githire_token');
+  if (token) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 export const analyzeGithub = async (username) => {
   const { data } = await api.post('/analyze', { username });
   return data;
@@ -40,6 +49,14 @@ export const getSavedReports = async () => {
 export const saveReport = async (reportData) => {
   const { data } = await api.post('/recruiter/reports', reportData);
   return data;
+};
+
+export const setAuthToken = (token) => {
+  if (token) {
+    localStorage.setItem('githire_token', token);
+    return;
+  }
+  localStorage.removeItem('githire_token');
 };
 
 export default api;

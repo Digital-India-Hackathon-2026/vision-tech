@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { evaluateCandidate, loginRecruiter, signupRecruiter } from '../api';
+import { evaluateCandidate, getSavedReports, loginRecruiter, saveReport, signupRecruiter } from '../api';
 import SkeletonLoader from '../components/Skeleton';
 
 function RecruiterLogin() {
@@ -143,15 +143,29 @@ function CandidateEvaluation() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [saveState, setSaveState] = useState(null);
 
   const handleEvaluate = async () => {
     if (!username.trim()) return;
     setLoading(true);
     setError(null);
     setData(null);
+    setSaveState(null);
     try {
       const result = await evaluateCandidate(username.trim());
       setData(result);
+
+      try {
+        await saveReport({
+          username: username.trim(),
+          score: result.hireScore || result.score || 0,
+          role: result.bestRole || result.careerLevel || 'Candidate',
+          data: result,
+        });
+        setSaveState('Saved to reports');
+      } catch (saveError) {
+        setSaveState('Analysis completed, but saving the report failed');
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to evaluate candidate');
     } finally {
@@ -190,6 +204,20 @@ function CandidateEvaluation() {
 
       {error && (
         <div className="auth-error" style={{ marginTop: '1rem' }}>{error}</div>
+      )}
+
+      {saveState && !error && (
+        <div style={{
+          marginTop: '1rem',
+          padding: '0.9rem 1rem',
+          borderRadius: '12px',
+          background: 'var(--bg-alt)',
+          border: '1px solid var(--border-light)',
+          color: 'var(--text-secondary)',
+          fontSize: '0.875rem',
+        }}>
+          {saveState}
+        </div>
       )}
 
       {data && (
@@ -323,10 +351,23 @@ function CandidateEvaluation() {
 function SavedReports() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const loadReports = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getSavedReports();
+      setReports(data);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to load reports');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   React.useEffect(() => {
-    // In a real app, fetch from API
-    setLoading(false);
+    loadReports();
   }, []);
 
   return (
@@ -337,6 +378,12 @@ function SavedReports() {
       </p>
       {loading ? (
         <SkeletonLoader type="candidate" />
+      ) : error ? (
+        <div className="dashboard-card" style={{ textAlign: 'center', padding: '2rem' }}>
+          <h3 style={{ marginBottom: '0.5rem' }}>Unable to load reports</h3>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem', fontSize: '0.9rem' }}>{error}</p>
+          <button className="btn-cta" onClick={loadReports}>Retry</button>
+        </div>
       ) : reports.length === 0 ? (
         <div className="dashboard-card" style={{ textAlign: 'center', padding: '3rem' }}>
           <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📄</div>
@@ -344,21 +391,29 @@ function SavedReports() {
           <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem', fontSize: '0.9rem' }}>
             Evaluated candidates will appear here once you save them
           </p>
+          <button className="btn-cta" onClick={loadReports} style={{ marginTop: '1rem' }}>
+            Refresh
+          </button>
         </div>
       ) : (
-        <div className="repo-list">
-          {reports.map((report, i) => (
-            <div key={i} className="repo-card">
-              <div className="repo-card-header">
-                <span className="repo-name">{report.username}</span>
-                <span className="repo-score">{report.score}/100</span>
+        <div>
+          <div style={{ marginBottom: '1rem' }}>
+            <button className="btn-cta" onClick={loadReports}>Refresh Reports</button>
+          </div>
+          <div className="repo-list">
+            {reports.map((report) => (
+              <div key={report._id || `${report.username}-${report.createdAt}`} className="repo-card">
+                <div className="repo-card-header">
+                  <span className="repo-name">{report.username}</span>
+                  <span className="repo-score">{report.score || 0}/100</span>
+                </div>
+                <div className="repo-meta">
+                  <span>{report.createdAt ? new Date(report.createdAt).toLocaleDateString() : 'Recently saved'}</span>
+                  <span>{report.role || 'Candidate Review'}</span>
+                </div>
               </div>
-              <div className="repo-meta">
-                <span>{report.date}</span>
-                <span>{report.role}</span>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
     </div>

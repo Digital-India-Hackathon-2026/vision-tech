@@ -1,615 +1,114 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { evaluateCandidate, getSavedReports, loginRecruiter, saveReport, signupRecruiter } from '../api';
-import SkeletonLoader from '../components/Skeleton';
 
-function RecruiterLogin() {
-  const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('githire_token'));
-  const [activeTab, setActiveTab] = useState('evaluate');
+const SKILLS = ['Java', 'Python', 'JavaScript', 'TypeScript', 'React', 'Node.js', 'Express.js', 'Spring Boot', 'Django', 'SQL', 'MongoDB', 'PostgreSQL', 'Redis', 'Docker', 'Kubernetes', 'AWS', 'Azure', 'Git', 'GitHub', 'REST APIs', 'GraphQL', 'Microservices', 'DevOps', 'CI/CD', 'Machine Learning', 'Deep Learning', 'Data Structures', 'Algorithms', 'System Design', 'Linux'];
+const DEFAULT_REQUIREMENTS = { role: '', department: '', experience: '0-2 years', employmentType: 'Full-time', workMode: 'Hybrid', location: '', skills: [], description: '' };
 
-  const handleAuth = async (e) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-    try {
-      let result;
-      if (isLogin) {
-        result = await loginRecruiter(email, password);
-      } else {
-        result = await signupRecruiter(email, password, name);
-      }
-      localStorage.setItem('githire_token', result.token);
-      setToken(result.token);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Authentication failed');
-    } finally {
-      setLoading(false);
-    }
+const normalize = (value = '') => value.toLowerCase().replace(/[^a-z0-9+#.]/g, '');
+const scoreLabel = (score) => score >= 90 ? ['Excellent Match', 'excellent'] : score >= 80 ? ['Strong Match', 'strong'] : score >= 70 ? ['Good Match', 'good'] : score >= 60 ? ['Average Match', 'average'] : ['Below Expectations', 'below'];
+const initials = (name = '') => name.split(/[\s-]/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'GH';
+
+function RequirementForm({ requirements, setRequirements, onContinue }) {
+  const [skillInput, setSkillInput] = useState('');
+  const [analysis, setAnalysis] = useState(null);
+  const set = (key, value) => setRequirements((current) => ({ ...current, [key]: value }));
+  const addSkill = (value = skillInput) => {
+    const skill = value.trim();
+    if (skill && !requirements.skills.some((item) => item.toLowerCase() === skill.toLowerCase())) set('skills', [...requirements.skills, skill]);
+    setSkillInput('');
   };
-
-  const handleLogout = () => {
-    localStorage.removeItem('githire_token');
-    setToken(null);
+  const extract = () => {
+    const text = requirements.description;
+    const matched = SKILLS.filter((skill) => text.toLowerCase().includes(skill.toLowerCase()));
+    const years = text.match(/(\d+\+?\s*(?:-|to)?\s*\d*\+?\s*years?)/i)?.[0];
+    const responsibilities = text.split(/[.!\n]/).map((line) => line.trim()).filter((line) => /build|develop|design|collaborate|own|lead|maintain/i.test(line)).slice(0, 4);
+    const preferred = text.split(/[.!\n]/).map((line) => line.trim()).filter((line) => /preferred|bonus|nice to have|plus/i.test(line)).slice(0, 4);
+    const mandatory = text.split(/[.!\n]/).map((line) => line.trim()).filter((line) => /required|must|essential/i.test(line)).slice(0, 4);
+    if (matched.length) set('skills', [...new Set([...requirements.skills, ...matched])]);
+    setAnalysis({ matched, years, responsibilities, preferred, mandatory });
   };
-
-  if (!token) {
-    return (
-      <div className="recruiter-layout">
-        <div className="recruiter-auth-shell">
-          <div className="recruiter-auth-panel recruiter-auth-panel-left">
-            <div className="auth-brand">
-              <div className="auth-brand-icon">G</div>
-              <div>
-                <p className="auth-kicker">Recruiter Console</p>
-                <h1>Evaluate engineering candidates with objectivity.</h1>
-              </div>
-            </div>
-
-            <p className="auth-description">
-              Assess developer skills based on actual code footprints, testing coverage, documentation hygiene, and repo structure instead of resume buzzwords.
-            </p>
-
-            <div className="auth-highlights">
-              <div className="auth-highlight-card">
-                <span className="highlight-icon">📊</span>
-                <div>
-                  <strong>Objective Quality Rubrics</strong>
-                  <p>Evaluate code structure and development practices with a standardized 1-100 score.</p>
-                </div>
-              </div>
-              <div className="auth-highlight-card">
-                <span className="highlight-icon">🤖</span>
-                <div>
-                  <strong>AI-Powered Interview Prep</strong>
-                  <p>Instantly generate project-specific questions to test candidate expertise during technical interviews.</p>
-                </div>
-              </div>
-              <div className="auth-highlight-card">
-                <span className="highlight-icon">📁</span>
-                <div>
-                  <strong>Centralized Candidate Reports</strong>
-                  <p>Save reports, build high-quality shortlists, and share candidates with your hiring team.</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="auth-metrics">
-              <div>
-                <strong>Instant</strong>
-                <span>GitHub indexing</span>
-              </div>
-              <div>
-                <strong>Explainable</strong>
-                <span>Hiring recommendation</span>
-              </div>
-              <div>
-                <strong>Optimized</strong>
-                <span>Recruiter workflow</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="recruiter-auth-panel recruiter-auth-panel-right">
-            <div className="auth-container auth-card-hero">
-              <div className="auth-card-header">
-                <div>
-                  <h2>{isLogin ? 'Recruiter Login' : 'Recruiter Sign Up'}</h2>
-                  <p>{isLogin ? 'Sign in to evaluate candidates' : 'Create an account to get started'}</p>
-                </div>
-                <span className="auth-badge">Vision Tech</span>
-              </div>
-
-              {error && <div className="auth-error">{error}</div>}
-              <form onSubmit={handleAuth}>
-                {!isLogin && (
-                  <div className="form-group">
-                    <label>Full Name</label>
-                    <input
-                      type="text"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="John Doe"
-                      required
-                    />
-                  </div>
-                )}
-                <div className="form-group">
-                  <label>Email</label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="recruiter@company.com"
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Password</label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Min 6 characters"
-                    required
-                    minLength={6}
-                  />
-                </div>
-                <button type="submit" className="btn-auth" disabled={loading}>
-                  {loading ? 'Processing...' : isLogin ? 'Sign In' : 'Create Account'}
-                </button>
-              </form>
-
-              <div className="auth-toggle">
-                {isLogin ? "Don't have an account? " : 'Already have an account? '}
-                <button onClick={() => setIsLogin(!isLogin)}>
-                  {isLogin ? 'Sign Up' : 'Sign In'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="recruiter-layout">
-      <aside className="recruiter-sidebar">
-        <div className="sidebar-menu">
-          <button
-            className={`sidebar-item ${activeTab === 'evaluate' ? 'active' : ''}`}
-            onClick={() => setActiveTab('evaluate')}
-          >
-            <span>🔍</span> Candidate Search
-          </button>
-          <button
-            className={`sidebar-item ${activeTab === 'reports' ? 'active' : ''}`}
-            onClick={() => setActiveTab('reports')}
-          >
-            <span>📄</span> Saved Reports
-          </button>
-          <button
-            className={`sidebar-item ${activeTab === 'settings' ? 'active' : ''}`}
-            onClick={() => setActiveTab('settings')}
-          >
-            <span>⚙️</span> Settings
-          </button>
-          <button
-            className={`sidebar-item ${activeTab === 'compare' ? 'active' : ''}`}
-            onClick={() => setActiveTab('compare')}
-          >
-            <span>🆚</span> Compare
-          </button>
-          <div style={{ marginTop: 'auto', padding: '1rem', borderTop: '1px solid var(--border-color)', margin: '1rem' }}>
-            <button
-              className="sidebar-item"
-              onClick={handleLogout}
-              style={{ color: 'var(--danger)' }}
-            >
-              <span>🚪</span> Logout
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      <main className="recruiter-content">
-        {activeTab === 'evaluate' && <CandidateEvaluation />}
-        {activeTab === 'reports' && <SavedReports />}
-        {activeTab === 'compare' && <CandidateComparison />}
-        {activeTab === 'settings' && <Settings />}
-      </main>
+  return <section className="recruiter-section">
+    <div className="section-heading"><div><p className="eyebrow">Hiring brief</p><h1>Recruiter requirements</h1><p>Define the role once, then score every GitHub profile against it.</p></div><button className="primary-button" onClick={onContinue}>Start candidate analysis →</button></div>
+    <div className="requirement-grid">
+      <div className="panel requirement-panel"><h3>Role details</h3><div className="form-grid">
+        <Field label="Job role" value={requirements.role} onChange={(value) => set('role', value)} placeholder="Senior Frontend Engineer" />
+        <Field label="Department" value={requirements.department} onChange={(value) => set('department', value)} placeholder="Engineering" />
+        <Select label="Experience required" value={requirements.experience} onChange={(value) => set('experience', value)} options={['0-2 years', '3-5 years', '6-10 years', '10+ years']} />
+        <Select label="Employment type" value={requirements.employmentType} onChange={(value) => set('employmentType', value)} options={['Full-time', 'Contract', 'Internship', 'Part-time']} />
+        <Select label="Work mode" value={requirements.workMode} onChange={(value) => set('workMode', value)} options={['Remote', 'Hybrid', 'On-site']} />
+        <Field label="Location" value={requirements.location} onChange={(value) => set('location', value)} placeholder="Bengaluru, India" />
+      </div></div>
+      <div className="panel requirement-panel"><h3>Required technical skills</h3><p className="muted">Search the catalogue or add a custom technology.</p><div className="skill-entry"><input list="skill-catalogue" value={skillInput} onChange={(event) => setSkillInput(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && (event.preventDefault(), addSkill())} placeholder="Search or add a skill" /><datalist id="skill-catalogue">{SKILLS.map((skill) => <option value={skill} key={skill} />)}</datalist><button onClick={() => addSkill()} aria-label="Add skill">+</button></div>
+      <div className="skill-chips">{requirements.skills.length ? requirements.skills.map((skill) => <span className="skill-chip" key={skill}>{skill}<button onClick={() => set('skills', requirements.skills.filter((item) => item !== skill))}>×</button></span>) : <span className="empty-copy">No skills added yet.</span>}</div></div>
     </div>
-  );
+    <div className="panel job-description"><div className="panel-title-row"><div><h3>Job description</h3><p className="muted">Paste the full role brief to extract qualification signals.</p></div><button className="secondary-button" onClick={extract} disabled={!requirements.description.trim()}>Extract requirements</button></div><textarea value={requirements.description} onChange={(event) => set('description', event.target.value)} placeholder="Paste responsibilities, requirements, and preferred qualifications here…" />
+    {analysis && <div className="extraction-grid"><Insight label="Technologies" items={analysis.matched} /><Insight label="Responsibilities" items={analysis.responsibilities} /><Insight label="Mandatory signals" items={analysis.mandatory} /><Insight label="Preferred qualifications" items={analysis.preferred} />{analysis.years && <div className="insight"><strong>Experience signal</strong><span>{analysis.years}</span></div>}</div>}</div>
+  </section>;
 }
 
-function CandidateEvaluation() {
-  const [username, setUsername] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
-  const [saveState, setSaveState] = useState(null);
-
-  const handleEvaluate = async () => {
-    if (!username.trim()) return;
-    setLoading(true);
-    setError(null);
-    setData(null);
-    setSaveState(null);
-    try {
-      const result = await evaluateCandidate(username.trim());
-      setData(result);
-
-      try {
-        await saveReport({
-          username: username.trim(),
-          score: result.hireScore || result.score || 0,
-          role: result.bestRole || result.careerLevel || 'Candidate',
-          data: result,
-        });
-        setSaveState('Saved to reports');
-      } catch (saveError) {
-        setSaveState('Analysis completed, but saving the report failed');
-      }
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to evaluate candidate');
-    } finally {
-      setLoading(false);
-    }
+function CandidateAnalysis({ requirements, candidates, setCandidates, onSave }) {
+  const [username, setUsername] = useState(''); const [loading, setLoading] = useState(false); const [error, setError] = useState('');
+  const analyze = async (value = username) => {
+    const clean = value.trim().replace(/^@/, ''); if (!clean) return; setLoading(true); setError('');
+    try { const data = await evaluateCandidate(clean); const candidate = createCandidate(clean, data, requirements); setCandidates((current) => [candidate, ...current.filter((item) => item.username.toLowerCase() !== clean.toLowerCase())]); onSave(candidate); setUsername(''); }
+    catch (err) { setError(err.response?.data?.message || 'Unable to analyze this GitHub profile. Check the username and try again.'); } finally { setLoading(false); }
   };
-
-  const getHireRecommendation = (score) => {
-    if (score >= 80) return { label: 'Strong Hire', color: 'var(--success)' };
-    if (score >= 60) return { label: 'Hire', color: 'var(--info)' };
-    if (score >= 40) return { label: 'Consider', color: 'var(--warning)' };
-    return { label: 'Not Recommended', color: 'var(--danger)' };
-  };
-
-  return (
-    <div style={{ maxWidth: '900px' }}>
-      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem' }}>Candidate Evaluation</h2>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
-        Enter a GitHub username to evaluate a candidate using our engineering framework
-      </p>
-
-      <div className="evaluation-header">
-        <input
-          type="text"
-          placeholder="GitHub username..."
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleEvaluate()}
-        />
-        <button className="btn-evaluate" onClick={handleEvaluate} disabled={loading || !username.trim()}>
-          {loading ? 'Evaluating...' : 'Evaluate'}
-        </button>
-      </div>
-
-      {loading && <SkeletonLoader type="candidate" />}
-
-      {error && (
-        <div className="auth-error" style={{ marginTop: '1rem' }}>{error}</div>
-      )}
-
-      {saveState && !error && (
-        <div style={{
-          marginTop: '1rem',
-          padding: '0.9rem 1rem',
-          borderRadius: '12px',
-          background: 'var(--bg-alt)',
-          border: '1px solid var(--border-light)',
-          color: 'var(--text-secondary)',
-          fontSize: '0.875rem',
-        }}>
-          {saveState}
-        </div>
-      )}
-
-      {data && (
-        <div className="dashboard-grid" style={{ marginTop: '1.5rem' }}>
-          {/* Summary */}
-          <div className="dashboard-card full-width">
-            <div className="candidate-summary" style={{ margin: 0, padding: 0, background: 'transparent', border: 'none' }}>
-              {data.profile?.avatar_url && (
-                <img src={data.profile.avatar_url} alt={username} className="candidate-avatar" />
-              )}
-              <div className="candidate-info">
-                <h2>{data.profile?.name || username}</h2>
-                <div className="candidate-tags">
-                  <span className="tag tag-primary">{data.careerLevel || 'Developer'}</span>
-                  {data.bestRole && <span className="tag tag-success">{data.bestRole}</span>}
-                  {data.experienceLevel && <span className="tag tag-warning">{data.experienceLevel}</span>}
-                </div>
-              </div>
-              {data.hireScore != null && (
-                <div className="candidate-score">
-                  <div className="score-circle" style={{ '--score': `${data.hireScore}%` }}>
-                    <span>{data.hireScore}</span>
-                  </div>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Hire Score</p>
-                  {data.hireReason && <div className="score-reason">{data.hireReason}</div>}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Hire Recommendation */}
-          {data.hireScore != null && (
-            <div className="dashboard-card">
-              <div className="card-header">
-                <h3>📋 Hiring Recommendation</h3>
-              </div>
-              <div style={{ textAlign: 'center', padding: '1rem' }}>
-                <div style={{
-                  display: 'inline-block',
-                  padding: '8px 24px',
-                  borderRadius: '50px',
-                  background: `${getHireRecommendation(data.hireScore).color}20`,
-                  border: `2px solid ${getHireRecommendation(data.hireScore).color}`,
-                  color: getHireRecommendation(data.hireScore).color,
-                  fontWeight: 700,
-                  fontSize: '1.1rem',
-                  marginBottom: '0.5rem',
-                }}>
-                  {getHireRecommendation(data.hireScore).label}
-                </div>
-                {data.engineeringScore != null && (
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.5rem' }}>
-                    Engineering Score: {data.engineeringScore}/100
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Engineering Score Breakdown */}
-          {data.frameworkScores && (
-            <div className="dashboard-card">
-              <div className="card-header">
-                <h3>📊 Evaluation Breakdown</h3>
-              </div>
-              <div className="practices-grid">
-                {Object.entries(data.frameworkScores).map(([key, value]) => (
-                  <div key={key} className="practice-item practice-item-stack">
-                    <div className="practice-row">
-                      <span className="practice-name">{key}</span>
-                      <span style={{
-                        fontSize: '0.85rem',
-                        fontWeight: 600,
-                        color: value >= 80 ? 'var(--success)' : value >= 50 ? 'var(--warning)' : 'var(--danger)',
-                      }}>
-                        {value}/100
-                      </span>
-                    </div>
-                    {data.practiceReasons?.[key] && <p className="reason-copy compact">{data.practiceReasons[key]}</p>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Repository Rankings */}
-          {data.repositories && data.repositories.length > 0 && (
-            <div className="dashboard-card">
-              <div className="card-header">
-                <h3>📂 Repository Rankings</h3>
-              </div>
-              <div className="repo-list">
-                {data.repositories.map((repo, i) => (
-                  <div key={i} className="repo-card">
-                    <div className="repo-card-header">
-                      <span className="repo-name">{repo.name}</span>
-                      <span className="repo-score">{repo.score}/100</span>
-                    </div>
-                    {repo.technologies && repo.technologies.length > 0 && (
-                      <div className="repo-techs">
-                        {repo.technologies.slice(0, 4).map((tech, j) => (
-                          <span key={j} className="repo-tech">{tech}</span>
-                        ))}
-                      </div>
-                    )}
-                    {repo.reason && <p className="reason-copy compact">{repo.reason}</p>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Interview Questions */}
-          {data.interviewQuestions && data.interviewQuestions.length > 0 && (
-            <div className="dashboard-card">
-              <div className="card-header">
-                <h3>❓ Interview Questions</h3>
-                <div className="card-icon" style={{ background: 'rgba(253,203,110,0.15)' }}>📝</div>
-              </div>
-              <div className="interview-questions">
-                {data.interviewQuestions.map((q, i) => (
-                  <div key={i} className="interview-q">
-                    <div className="q-repo">{q.repository}</div>
-                    <div className="q-text">{q.question}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
+  const candidate = candidates[0];
+  return <section className="recruiter-section"><div className="section-heading"><div><p className="eyebrow">AI screening</p><h1>Candidate analysis</h1><p>Analyze engineering evidence and compare it with your active hiring brief.</p></div><RequirementPill requirements={requirements} /></div>
+    <div className="candidate-search panel"><input value={username} onChange={(event) => setUsername(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && analyze()} placeholder="Enter a public GitHub username" /><button className="primary-button" disabled={loading || !username.trim()} onClick={() => analyze()}>{loading ? 'Analyzing profile…' : 'Analyze candidate'}</button></div>{error && <div className="alert-error">{error}</div>}
+    {loading && <LoadingCards />}{candidate && <CandidateReport candidate={candidate} />}
+  </section>;
 }
 
-function SavedReports() {
-  const [reports, setReports] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const loadReports = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await getSavedReports();
-      setReports(data);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to load reports');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  React.useEffect(() => {
-    loadReports();
-  }, []);
-
-  return (
-    <div>
-      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem' }}>Saved Reports</h2>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
-        View and manage your saved candidate evaluation reports
-      </p>
-      {loading ? (
-        <SkeletonLoader type="candidate" />
-      ) : error ? (
-        <div className="dashboard-card" style={{ textAlign: 'center', padding: '2rem' }}>
-          <h3 style={{ marginBottom: '0.5rem' }}>Unable to load reports</h3>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem', fontSize: '0.9rem' }}>{error}</p>
-          <button className="btn-cta" onClick={loadReports}>Retry</button>
-        </div>
-      ) : reports.length === 0 ? (
-        <div className="dashboard-card" style={{ textAlign: 'center', padding: '3rem' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📄</div>
-          <h3>No Saved Reports</h3>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem', fontSize: '0.9rem' }}>
-            Evaluated candidates will appear here once you save them
-          </p>
-          <button className="btn-cta" onClick={loadReports} style={{ marginTop: '1rem' }}>
-            Refresh
-          </button>
-        </div>
-      ) : (
-        <div>
-          <div style={{ marginBottom: '1rem' }}>
-            <button className="btn-cta" onClick={loadReports}>Refresh Reports</button>
-          </div>
-          <div className="repo-list">
-            {reports.map((report) => (
-              <div key={report._id || `${report.username}-${report.createdAt}`} className="repo-card">
-                <div className="repo-card-header">
-                  <span className="repo-name">{report.username}</span>
-                  <span className="repo-score">{report.score || 0}/100</span>
-                </div>
-                <div className="repo-meta">
-                  <span>{report.createdAt ? new Date(report.createdAt).toLocaleDateString() : 'Recently saved'}</span>
-                  <span>{report.role || 'Candidate Review'}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
+function CandidateReport({ candidate }) { const [label, tone] = scoreLabel(candidate.match); return <div className="candidate-report">
+  <div className="candidate-hero panel"><div className="candidate-identity">{candidate.avatar ? <img src={candidate.avatar} alt="" /> : <span className="avatar-fallback">{initials(candidate.name)}</span>}<div><p className="eyebrow">Candidate profile</p><h2>{candidate.name}</h2><span>@{candidate.username} · {candidate.role}</span></div></div><div className="match-score"><div className="gauge" style={{ '--value': `${candidate.match * 3.6}deg` }}><strong>{candidate.match}%</strong></div><span className={`score-badge ${tone}`}>{label}</span></div></div>
+  <div className="metric-grid">{Object.entries(candidate.metrics).map(([key, value]) => <Metric key={key} label={key} value={value} />)}</div>
+  <div className="analytics-grid"><div className="panel"><h3>Skills match</h3><Donut match={candidate.metrics['Technical Skills']} /><div className="legend"><span><i className="legend-match" />Matched ({candidate.matchedSkills.length})</span><span><i className="legend-gap" />Gaps ({candidate.gaps.length})</span></div><div className="skill-summary"><strong>Matched</strong><div className="skill-chips">{candidate.matchedSkills.map((skill) => <span className="skill-chip good" key={skill}>{skill}</span>) || <span className="empty-copy">No direct skill evidence detected.</span>}</div><strong>Skill gaps</strong><div className="skill-chips">{candidate.gaps.map((skill) => <span className="skill-chip gap" key={skill}>{skill}</span>) || <span className="empty-copy">No identified gaps.</span>}</div></div></div>
+  <div className="panel"><h3>Programming language evidence</h3><BarChart values={candidate.languages} /><h3 className="subhead">Repository analysis</h3><div className="repo-evidence">{candidate.repositories.slice(0, 4).map((repo) => <div key={repo.name}><span>{repo.name}</span><b>{repo.score}/100</b></div>)}</div></div>
+  <div className="panel"><h3>Skill comparison</h3><Radar values={candidate.radar} /><p className="recommendation"><b>{label}.</b> {candidate.summary}</p></div></div>
+  </div>;
 }
 
-function CandidateComparison() {
-  const [leftUsername, setLeftUsername] = useState('');
-  const [rightUsername, setRightUsername] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [leftData, setLeftData] = useState(null);
-  const [rightData, setRightData] = useState(null);
-
-  const handleCompare = async () => {
-    if (!leftUsername.trim() || !rightUsername.trim()) return;
-    setLoading(true);
-    setError(null);
-    setLeftData(null);
-    setRightData(null);
-
-    try {
-      const [leftResult, rightResult] = await Promise.all([
-        evaluateCandidate(leftUsername.trim()),
-        evaluateCandidate(rightUsername.trim()),
-      ]);
-      setLeftData(leftResult);
-      setRightData(rightResult);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to compare candidates');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const renderComparisonCard = (title, data, username) => {
-    if (!data) return null;
-
-    return (
-      <div className="dashboard-card">
-        <div className="card-header">
-          <h3>{title}</h3>
-        </div>
-        <div className="comparison-summary">
-          <h4>{data.profile?.name || username}</h4>
-          <div className="comparison-metrics">
-            <div>
-              <span className="comparison-metric-label">Hire Score</span>
-              <strong>{data.hireScore ?? 'N/A'}</strong>
-            </div>
-            <div>
-              <span className="comparison-metric-label">Engineering</span>
-              <strong>{data.engineeringScore ?? 'N/A'}</strong>
-            </div>
-            <div>
-              <span className="comparison-metric-label">Best Role</span>
-              <strong>{data.bestRole || 'N/A'}</strong>
-            </div>
-          </div>
-          {data.hireReason && <p className="reason-copy">{data.hireReason}</p>}
-          {data.repositories && data.repositories.length > 0 && (
-            <div className="repo-list" style={{ marginTop: '1rem' }}>
-              {data.repositories.slice(0, 3).map((repo) => (
-                <div key={repo.name} className="repo-card">
-                  <div className="repo-card-header">
-                    <span className="repo-name">{repo.name}</span>
-                    <span className="repo-score">{repo.score}/100</span>
-                  </div>
-                  {repo.reason && <p className="reason-copy compact">{repo.reason}</p>}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div style={{ maxWidth: '1100px' }}>
-      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem' }}>Candidate Comparison</h2>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
-        Compare two candidates side-by-side using the recruiter framework
-      </p>
-
-      <div className="comparison-form">
-        <input type="text" placeholder="First GitHub username..." value={leftUsername} onChange={(e) => setLeftUsername(e.target.value)} />
-        <input type="text" placeholder="Second GitHub username..." value={rightUsername} onChange={(e) => setRightUsername(e.target.value)} />
-        <button className="btn-evaluate" onClick={handleCompare} disabled={loading || !leftUsername.trim() || !rightUsername.trim()}>
-          {loading ? 'Comparing...' : 'Compare Candidates'}
-        </button>
-      </div>
-
-      {error && <div className="auth-error" style={{ marginTop: '1rem' }}>{error}</div>}
-
-      {loading && <SkeletonLoader type="candidate" />}
-
-      {(leftData || rightData) && (
-        <div className="comparison-grid">
-          {renderComparisonCard('Candidate A', leftData, leftUsername.trim())}
-          {renderComparisonCard('Candidate B', rightData, rightUsername.trim())}
-        </div>
-      )}
-    </div>
-  );
+function Comparison({ requirements, candidates, setCandidates, onSave }) {
+  const [fileError, setFileError] = useState(''); const [running, setRunning] = useState(false); const [filter, setFilter] = useState('all');
+  const analyzeFile = async (event) => { const file = event.target.files?.[0]; if (!file) return; if (!file.name.endsWith('.txt')) { setFileError('Upload a .txt file with one GitHub username per line.'); return; } const names = [...new Set((await file.text()).split(/[\r\n,\s]+/).map((item) => item.trim().replace(/^@/, '')).filter(Boolean))].slice(0, 50); if (!names.length) { setFileError('No GitHub usernames were found in that file.'); return; } setRunning(true); setFileError(''); const results = []; for (const name of names) { try { const data = await evaluateCandidate(name); results.push(createCandidate(name, data, requirements)); } catch { results.push({ username: name, name, error: true, match: 0 }); } } setCandidates((current) => [...results, ...current.filter((candidate) => !results.some((result) => result.username.toLowerCase() === candidate.username.toLowerCase()))]); results.filter((candidate) => !candidate.error).forEach(onSave); setRunning(false); };
+  const ranked = [...candidates].filter((candidate) => filter === 'all' || scoreLabel(candidate.match)[1] === filter).sort((a, b) => b.match - a.match);
+  return <section className="recruiter-section"><div className="section-heading"><div><p className="eyebrow">Shortlist intelligence</p><h1>Compare candidates</h1><p>Upload up to 50 public GitHub usernames, score them, and surface the strongest shortlist.</p></div><div className="export-actions"><button onClick={() => exportCsv(ranked)}>Export CSV</button><button onClick={() => exportExcel(ranked)}>Export Excel</button><button onClick={() => window.print()}>Print / PDF</button></div></div>
+  <label className="upload-zone"><input type="file" accept=".txt,text/plain" onChange={analyzeFile} /><span>↑</span><strong>{running ? 'Analyzing candidates…' : 'Upload candidate list'}</strong><small>One GitHub username per line · .txt · max 50 candidates</small></label>{fileError && <div className="alert-error">{fileError}</div>}
+  <div className="ranking-toolbar"><div className="ranking-summary"><strong>{ranked.length} candidates</strong><span>Active role: {requirements.role || 'Not specified'}</span></div><select value={filter} onChange={(event) => setFilter(event.target.value)}><option value="all">All recommendations</option><option value="excellent">Excellent Match</option><option value="strong">Strong Match</option><option value="good">Good Match</option><option value="average">Average Match</option><option value="below">Below Expectations</option></select></div>
+  {ranked.length ? <div className="panel table-wrap"><table><thead><tr><th>Rank</th><th>Candidate</th><th>Match</th><th>Skills</th><th>JD match</th><th>GitHub score</th><th>Recommendation</th></tr></thead><tbody>{ranked.map((candidate, index) => { const [label, tone] = scoreLabel(candidate.match); return <tr key={candidate.username} className={index < 3 ? 'top-candidate' : ''}><td>{index < 3 ? ['🥇', '🥈', '🥉'][index] : `#${index + 1}`}</td><td><b>{candidate.name}</b><small>@{candidate.username}</small></td><td><strong>{candidate.match}%</strong></td><td>{candidate.metrics['Technical Skills']}%</td><td>{candidate.metrics['Job Description']}%</td><td>{candidate.metrics['GitHub Activity']}%</td><td><span className={`score-badge ${tone}`}>{label}</span></td></tr>; })}</tbody></table></div> : <EmptyState title="Your comparison table is ready" text="Upload a .txt list to create a ranked, exportable candidate shortlist." />}
+  {ranked.length > 0 && <div className="ai-summary panel"><span className="summary-icon">✦</span><div><p className="eyebrow">AI summary</p><h3>Interview shortlist recommendation</h3><p>{summaryText(ranked, requirements)}</p></div></div>}</section>;
 }
 
-function Settings() {
-  return (
-    <div>
-      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem' }}>Settings</h2>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
-        Manage your account settings
-      </p>
-      <div className="dashboard-card" style={{ maxWidth: '500px' }}>
-        <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Account Information</h3>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-          Account management features will be available in a future update.
-        </p>
-      </div>
-    </div>
-  );
+function Reports() { const [reports, setReports] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { getSavedReports().then(setReports).catch(() => setReports([])).finally(() => setLoading(false)); }, []); return <section className="recruiter-section"><div className="section-heading"><div><p className="eyebrow">Hiring record</p><h1>Reports</h1><p>Saved candidate evaluations for your team.</p></div></div>{loading ? <LoadingCards /> : reports.length ? <div className="panel table-wrap"><table><thead><tr><th>Candidate</th><th>Role</th><th>Score</th><th>Created</th></tr></thead><tbody>{reports.map((report) => <tr key={report._id}><td><b>{report.username}</b></td><td>{report.role || 'Candidate review'}</td><td>{report.score || 0}/100</td><td>{report.createdAt ? new Date(report.createdAt).toLocaleDateString() : 'Recently'}</td></tr>)}</tbody></table></div> : <EmptyState title="No saved reports" text="Completed candidate analyses will be saved here." />}</section>; }
+
+function RecruiterDashboard() { const [token, setToken] = useState(localStorage.getItem('githire_token')); const [tab, setTab] = useState('dashboard'); const [theme, setTheme] = useState(localStorage.getItem('vision-theme') || 'light'); const [requirements, setRequirements] = useState(() => JSON.parse(localStorage.getItem('vision-requirements') || 'null') || DEFAULT_REQUIREMENTS); const [candidates, setCandidates] = useState(() => JSON.parse(localStorage.getItem('vision-candidates') || '[]'));
+  useEffect(() => { localStorage.setItem('vision-requirements', JSON.stringify(requirements)); }, [requirements]); useEffect(() => { localStorage.setItem('vision-candidates', JSON.stringify(candidates)); }, [candidates]); useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('vision-theme', theme); }, [theme]);
+  const saveCandidate = async (candidate) => { try { await saveReport({ username: candidate.username, score: candidate.match, role: requirements.role || candidate.role, data: candidate }); } catch { /* Reports remain available locally when the database is offline. */ } };
+  if (!token) return <RecruiterAuth onAuthenticated={setToken} />;
+  const nav = [['dashboard', 'Dashboard'], ['requirements', 'Recruiter Requirements'], ['analysis', 'Candidate Analysis'], ['compare', 'Compare Candidates'], ['reports', 'Reports'], ['profile', 'Profile']]; const dashboardCandidates = candidates.slice(0, 5);
+  return <div className="recruiter-app"><header className="recruiter-navbar"><a href="/" className="recruiter-brand"><span>V</span><div>Vision Tech<small>Recruiter intelligence</small></div></a><nav>{nav.map(([id, label]) => <button className={tab === id ? 'active' : ''} onClick={() => setTab(id)} key={id}>{label}</button>)}</nav><div className="nav-actions"><button className="icon-button" title="Toggle theme" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? '◐' : '☀'}</button><button className="logout-button" onClick={() => { localStorage.removeItem('githire_token'); setToken(null); }}>Logout</button></div></header><main className="recruiter-main">
+  {tab === 'dashboard' && <Dashboard requirements={requirements} candidates={dashboardCandidates} onNavigate={setTab} />}{tab === 'requirements' && <RequirementForm requirements={requirements} setRequirements={setRequirements} onContinue={() => setTab('analysis')} />}{tab === 'analysis' && <CandidateAnalysis requirements={requirements} candidates={candidates} setCandidates={setCandidates} onSave={saveCandidate} />}{tab === 'compare' && <Comparison requirements={requirements} candidates={candidates} setCandidates={setCandidates} onSave={saveCandidate} />}{tab === 'reports' && <Reports />}{tab === 'profile' && <Profile requirements={requirements} clear={() => { setRequirements(DEFAULT_REQUIREMENTS); setCandidates([]); }} />}</main><footer className="recruiter-footer"><span>Developed by Vision Tech</span><span>© 2026 Vision Tech · All Rights Reserved</span></footer></div>;
 }
 
-export default RecruiterLogin;
+function Dashboard({ requirements, candidates, onNavigate }) { const best = candidates[0]; return <section className="recruiter-section"><div className="welcome-banner"><div><p className="eyebrow">Recruitment command center</p><h1>Make every shortlist evidence-led.</h1><p>Turn GitHub activity into consistent, requirement-aware hiring signals.</p><button className="primary-button" onClick={() => onNavigate('requirements')}>Set hiring requirements</button></div><div className="banner-stats"><div><strong>{requirements.skills.length}</strong><span>required skills</span></div><div><strong>{candidates.length}</strong><span>candidates analyzed</span></div><div><strong>{best?.match || '—'}{best ? '%' : ''}</strong><span>best current match</span></div></div></div><div className="dashboard-overview"><div className="panel"><p className="eyebrow">Active hiring brief</p><h2>{requirements.role || 'Create a role brief'}</h2><p className="muted">{requirements.department || 'Department not set'} · {requirements.experience}</p><div className="skill-chips">{requirements.skills.slice(0, 8).map((skill) => <span className="skill-chip" key={skill}>{skill}</span>) || <span className="empty-copy">Add technical requirements to begin matching.</span>}</div><button className="text-button" onClick={() => onNavigate('requirements')}>Edit requirements →</button></div><div className="panel"><p className="eyebrow">Candidate funnel</p><div className="funnel">{[['Excellent', candidates.filter((candidate) => candidate.match >= 90).length], ['Strong', candidates.filter((candidate) => candidate.match >= 80 && candidate.match < 90).length], ['Good', candidates.filter((candidate) => candidate.match >= 70 && candidate.match < 80).length], ['Other', candidates.filter((candidate) => candidate.match < 70).length]].map(([label, value]) => <div key={label}><span>{label}</span><b>{value}</b></div>)}</div></div></div>{candidates.length ? <div className="panel table-wrap"><div className="panel-title-row"><h3>Top candidates</h3><button className="text-button" onClick={() => onNavigate('compare')}>View ranking →</button></div><table><thead><tr><th>Candidate</th><th>Overall match</th><th>Skills</th><th>Recommendation</th></tr></thead><tbody>{candidates.map((candidate) => { const [label, tone] = scoreLabel(candidate.match); return <tr key={candidate.username}><td><b>{candidate.name}</b><small>@{candidate.username}</small></td><td>{candidate.match}%</td><td>{candidate.metrics['Technical Skills']}%</td><td><span className={`score-badge ${tone}`}>{label}</span></td></tr>; })}</tbody></table></div> : <EmptyState title="Start your first shortlist" text="Add role requirements, then analyze a GitHub candidate or upload a candidate list." action="Analyze a candidate" onAction={() => onNavigate('analysis')} />}</section>; }
+
+function RecruiterAuth({ onAuthenticated }) { const [login, setLogin] = useState(true); const [values, setValues] = useState({ name: '', email: '', password: '' }); const [error, setError] = useState(''); const [loading, setLoading] = useState(false); const submit = async (event) => { event.preventDefault(); setLoading(true); setError(''); try { const result = login ? await loginRecruiter(values.email, values.password) : await signupRecruiter(values.email, values.password, values.name); localStorage.setItem('githire_token', result.token); onAuthenticated(result.token); } catch (err) { setError(err.response?.data?.message || 'Authentication failed.'); } finally { setLoading(false); } }; return <div className="auth-page"><div className="auth-copy"><p className="eyebrow">Vision Tech</p><h1>Recruit with proof, not guesses.</h1><p>Build fair, repeatable technical shortlists from real GitHub engineering signals.</p><div className="auth-points"><span>✓ Requirement-aware matching</span><span>✓ Portfolio and activity analysis</span><span>✓ Exportable hiring reports</span></div></div><form className="auth-card" onSubmit={submit}><span className="auth-logo">V</span><h2>{login ? 'Welcome back' : 'Create recruiter account'}</h2><p>{login ? 'Sign in to manage your hiring pipeline.' : 'Start your evidence-led hiring workflow.'}</p>{error && <div className="alert-error">{error}</div>}{!login && <Field label="Full name" value={values.name} onChange={(value) => setValues({ ...values, name: value })} placeholder="Your name" required /> }<Field label="Work email" type="email" value={values.email} onChange={(value) => setValues({ ...values, email: value })} placeholder="you@company.com" required /><Field label="Password" type="password" value={values.password} onChange={(value) => setValues({ ...values, password: value })} placeholder="At least 6 characters" required /><button className="primary-button auth-submit" disabled={loading}>{loading ? 'Please wait…' : login ? 'Sign in' : 'Create account'}</button><button type="button" className="text-button auth-switch" onClick={() => setLogin(!login)}>{login ? 'New recruiter? Create an account' : 'Already have an account? Sign in'}</button></form></div>; }
+
+function Profile({ requirements, clear }) { return <section className="recruiter-section"><div className="section-heading"><div><p className="eyebrow">Workspace preferences</p><h1>Profile & settings</h1><p>Manage recruiter workspace data stored in this browser.</p></div></div><div className="panel settings-panel"><h3>Recruiting workspace</h3><p className="muted">The active brief is saved locally so it persists between sessions on this device.</p><dl><dt>Active role</dt><dd>{requirements.role || 'Not configured'}</dd><dt>Required skills</dt><dd>{requirements.skills.length}</dd></dl><button className="danger-button" onClick={clear}>Clear local workspace data</button></div></section>; }
+function Field({ label, value, onChange, placeholder, type = 'text', required = false }) { return <label className="field"><span>{label}</span><input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} required={required} /></label>; }
+function Select({ label, value, onChange, options }) { return <label className="field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option}>{option}</option>)}</select></label>; }
+function Insight({ label, items }) { return <div className="insight"><strong>{label}</strong>{items?.length ? <ul>{items.map((item) => <li key={item}>{item}</li>)}</ul> : <span>Not detected</span>}</div>; }
+function RequirementPill({ requirements }) { return <div className="requirement-pill"><strong>{requirements.role || 'No role selected'}</strong><span>{requirements.skills.length} skills</span></div>; }
+function Metric({ label, value }) { return <div className="metric-card"><span>{label}</span><strong>{value}%</strong><div><i style={{ width: `${value}%` }} /></div></div>; }
+function Donut({ match }) { return <div className="donut" style={{ '--match': `${match * 3.6}deg` }}><div><strong>{match}%</strong><span>match</span></div></div>; }
+function BarChart({ values }) { const entries = Object.entries(values || {}).slice(0, 5); return <div className="bar-chart">{entries.length ? entries.map(([name, value]) => <div className="bar-row" key={name}><span>{name}</span><div><i style={{ width: `${Math.min(100, value)}%` }} /></div><b>{value}%</b></div>) : <span className="empty-copy">Language evidence unavailable.</span>}</div>; }
+function Radar({ values }) { const points = Object.values(values); const labels = Object.keys(values); const coords = points.map((value, index) => { const angle = (-90 + index * 72) * Math.PI / 180; const radius = 43 * value / 100; return `${50 + radius * Math.cos(angle)},${50 + radius * Math.sin(angle)}`; }).join(' '); return <div className="radar"><svg viewBox="0 0 100 100" role="img" aria-label="Skill comparison radar chart"><polygon points="50,7 91,37 75,88 25,88 9,37" className="radar-grid" /><polygon points={coords} className="radar-value" />{labels.map((label, index) => { const angle = (-90 + index * 72) * Math.PI / 180; return <text key={label} x={50 + 46 * Math.cos(angle)} y={52 + 46 * Math.sin(angle)}>{label.split(' ')[0]}</text>; })}</svg></div>; }
+function EmptyState({ title, text, action, onAction }) { return <div className="empty-state panel"><span>✦</span><h3>{title}</h3><p>{text}</p>{action && <button className="primary-button" onClick={onAction}>{action}</button>}</div>; }
+function LoadingCards() { return <div className="loading-cards"><i /><i /><i /></div>; }
+function createCandidate(username, data, requirements) { const rawSkills = [...new Set([...(data.technologies || []), ...(data.repositories || []).flatMap((repo) => repo.technologies || [])])]; const required = requirements.skills; const matchedSkills = required.filter((skill) => rawSkills.some((available) => normalize(available).includes(normalize(skill)) || normalize(skill).includes(normalize(available)))); const gaps = required.filter((skill) => !matchedSkills.includes(skill)); const skills = required.length ? Math.round(matchedSkills.length / required.length * 100) : Math.round(data.engineeringScore || data.hireScore || 50); const jdTokens = requirements.description.toLowerCase().match(/[a-z][a-z+#.]{2,}/g) || []; const projectText = `${data.profile?.bio || ''} ${rawSkills.join(' ')} ${(data.repositories || []).map((repo) => `${repo.name} ${repo.reason || ''}`).join(' ')}`.toLowerCase(); const relevantTokens = [...new Set(jdTokens)].filter((token) => projectText.includes(token)); const jd = requirements.description ? Math.min(100, Math.max(20, Math.round(relevantTokens.length / Math.max(10, new Set(jdTokens).size) * 180))) : skills; const github = Math.round((data.engineeringScore || data.hireScore || 50)); const repository = Math.round(data.frameworkScores?.['Project Quality'] || github); const consistency = Math.round(data.frameworkScores?.['Engineering Practices'] || github); const experience = Math.min(100, Math.round((github + (data.profile?.public_repos || 0) * 4) / 2)); const match = Math.round(skills * .36 + jd * .18 + github * .16 + repository * .14 + consistency * .08 + experience * .08); const languages = Object.fromEntries(rawSkills.slice(0, 5).map((skill, index) => [skill, Math.max(30, 100 - index * 16)])); return { username, name: data.profile?.name || username, avatar: data.profile?.avatar_url, role: data.bestRole || 'Developer', match, matchedSkills, gaps, languages, repositories: data.repositories || [], metrics: { 'Technical Skills': skills, 'Job Description': jd, 'Experience Match': experience, 'GitHub Activity': github, 'Repository Quality': repository, 'Coding Consistency': consistency, 'Project Relevance': Math.round((jd + repository) / 2) }, radar: { Skills: skills, Quality: repository, Activity: github, Relevance: jd, Experience: experience }, summary: `${data.hireReason || 'GitHub evidence was compared with the active hiring brief.'} ${gaps.length ? `Focus the interview on ${gaps.slice(0, 3).join(', ')}.` : 'The required skill set has strong visible evidence.'}` }; }
+function summaryText(candidates, requirements) { const top = candidates.slice(0, 3); const excellent = candidates.filter((candidate) => candidate.match >= 90).length; return `Out of ${candidates.length} analyzed candidates, ${excellent} satisfy more than 90% of the active requirements. ${top.map((candidate) => `${candidate.name} (${candidate.match}%)`).join(', ')} ${top.length > 1 ? 'are' : 'is'} the strongest interview shortlist${requirements.role ? ` for the ${requirements.role} role` : ''}.`; }
+function download(content, filename, type) { const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([content], { type })); link.download = filename; link.click(); URL.revokeObjectURL(link.href); }
+function exportCsv(candidates) { const rows = [['Candidate', 'GitHub Username', 'Match %', 'Skills Match', 'JD Match', 'GitHub Score', 'Recommendation'], ...candidates.map((candidate) => [candidate.name, candidate.username, candidate.match, candidate.metrics['Technical Skills'], candidate.metrics['Job Description'], candidate.metrics['GitHub Activity'], scoreLabel(candidate.match)[0]])]; download(rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\n'), 'vision-tech-candidate-report.csv', 'text/csv'); }
+function exportExcel(candidates) { const rows = [['Candidate', 'GitHub Username', 'Match %', 'Skills Match', 'JD Match', 'GitHub Score', 'Recommendation'], ...candidates.map((candidate) => [candidate.name, candidate.username, candidate.match, candidate.metrics['Technical Skills'], candidate.metrics['Job Description'], candidate.metrics['GitHub Activity'], scoreLabel(candidate.match)[0]])]; download(rows.map((row) => row.join('\t')).join('\n'), 'vision-tech-candidate-report.xls', 'application/vnd.ms-excel'); }
+export default RecruiterDashboard;

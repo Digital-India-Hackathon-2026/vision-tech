@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const GEMINI_API_KEYS = Array.from(
@@ -7,19 +8,46 @@ const GEMINI_API_KEYS = Array.from(
   ]).values()
 );
 
+const OPENAI_API_KEYS = Array.from(
+  new Set([
+    ...(process.env.OPENAI_API_KEYS?.split(',').map((key) => key.trim()).filter(Boolean) || []),
+    ...(process.env.OPENAI_API_KEY ? [process.env.OPENAI_API_KEY.trim()] : []),
+  ]).values()
+);
+
+const GROK_API_KEYS = Array.from(
+  new Set([
+    ...(process.env.GROK_API_KEYS?.split(',').map((key) => key.trim()).filter(Boolean) || []),
+    ...(process.env.GROK_API_KEY ? [process.env.GROK_API_KEY.trim()] : []),
+  ]).values()
+);
+
 if (!GEMINI_API_KEYS.length) {
   console.warn('Warning: No Gemini API key configured. Gemini requests may fail.');
 }
+if (!OPENAI_API_KEYS.length) {
+  console.warn('Warning: No OpenAI API key configured. OpenAI requests may fail.');
+}
+if (!GROK_API_KEYS.length) {
+  console.warn('Warning: No Grok API key configured. Grok requests may fail.');
+}
 
-const MODEL_CANDIDATES = (process.env.GEMINI_MODEL_CANDIDATES
-  ? process.env.GEMINI_MODEL_CANDIDATES.split(',').map((name) => name.trim()).filter(Boolean)
-  : [
-      'gemini-3.5-flash',
-      'gemini-flash-latest',
-      'gemini-2.5-flash-lite',
-      'gemini-2.0-flash-lite',
-      'gemini-2.0-flash',
-    ]);
+const MODEL_CANDIDATES = {
+  gemini: process.env.GEMINI_MODEL_CANDIDATES
+    ? process.env.GEMINI_MODEL_CANDIDATES.split(',').map((name) => name.trim()).filter(Boolean)
+    : ['gemini-3.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-2.0-flash-lite', 'gemini-2.0-flash'],
+  openai: process.env.OPENAI_MODEL_CANDIDATES
+    ? process.env.OPENAI_MODEL_CANDIDATES.split(',').map((name) => name.trim()).filter(Boolean)
+    : ['gpt-4.1-mini', 'gpt-4o-mini', 'gpt-3.5-turbo'],
+  grok: process.env.GROK_MODEL_CANDIDATES
+    ? process.env.GROK_MODEL_CANDIDATES.split(',').map((name) => name.trim()).filter(Boolean)
+    : ['grok-1'],
+};
+
+const MODEL_PROVIDERS = ['gemini', 'openai', 'grok'];
+
+const OPENAI_API_BASE = process.env.OPENAI_API_BASE || 'https://api.openai.com';
+const GROK_API_BASE = process.env.GROK_API_BASE || 'https://api.grok.com';
 
 function extractJsonText(text) {
   let cleaned = text.trim();
@@ -396,31 +424,105 @@ For Experienced use: Architecture (20%), Engineering (25%), Open Source (20%), D
 `;
 }
 
-async function callGemini(prompt, options = {}) {
-  const preferredModel = options.model?.trim();
-  const modelCandidates = preferredModel
-    ? [preferredModel, ...MODEL_CANDIDATES.filter((model) => model !== preferredModel)]
-    : MODEL_CANDIDATES;
+function getModelCandidates(provider, preferredModel) {
+  const base = MODEL_CANDIDATES[provider] || MODEL_CANDIDATES.gemini;
+  const trimmedModel = preferredModel?.trim();
+  if (trimmedModel && base.includes(trimmedModel)) {
+    return [trimmedModel, ...base.filter((model) => model !== trimmedModel)];
+  }
+  return base;
+}
 
-  const apiKeys = (options.apiKeys || GEMINI_API_KEYS).map((key) => key.trim()).filter(Boolean);
+function getApiKeys(provider) {
+  if (provider === 'openai') return OPENAI_API_KEYS;
+  if (provider === 'grok') return GROK_API_KEYS;
+  return GEMINI_API_KEYS;
+}
+
+function extractTextFromApiResponse(responseData) {
+  if (!responseData) return null;
+  const output = responseData.output || responseData.choices || [];
+  if (Array.isArray(output) && output.length) {
+    const item = output[0];
+    if (typeof item === 'string') return item;
+    if (item?.content) {
+      if (Array.isArray(item.content)) {
+        const textBlock = item.content.find((chunk) => chunk?.type === 'output_text');
+        return textBlock?.text || item.content.map((chunk) => chunk?.text || '').join('');
+      }
+      return item.content?.text || null;
+    }
+    if (item?.message?.content) {
+      return item.message.content;
+    }
+    if (item?.text) return item.text;
+  }
+  if (typeof responseData.text === 'string') return responseData.text;
+  if (Array.isArray(responseData.results) && responseData.results.length) {
+    return extractTextFromApiResponse(responseData.results[0]);
+  }
+  return null;
+}
+
+async function callModel(prompt, options = {}) {
+  const provider = (options.provider || 'gemini').toLowerCase();
+  const modelCandidates = getModelCandidates(provider, options.model);
+  const apiKeys = getApiKeys(provider).filter(Boolean);
   if (!apiKeys.length) {
-    throw new Error('No Gemini API key configured');
+    throw new Error(`No ${provider} API key configured`);
   }
 
   let lastError = null;
 
   for (const apiKey of apiKeys) {
-    const client = new GoogleGenerativeAI(apiKey);
-
     for (const modelName of modelCandidates) {
       try {
+        if (provider === 'openai') {
+          const response = await axios.post(
+            `${OPENAI_API_BASE}/v1/responses`,
+            {
+              model: modelName,
+              input: prompt,
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+              },
+              timeout: 120000,
+            }
+          );
+          const text = extractTextFromApiResponse(response.data);
+          return JSON.parse(extractJsonText(text || ''));
+        }
+
+        if (provider === 'grok') {
+          const response = await axios.post(
+            `${GROK_API_BASE}/v1/complete`,
+            {
+              model: modelName,
+              prompt,
+              max_tokens: 1200,
+              temperature: 0.2,
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+              },
+              timeout: 120000,
+            }
+          );
+          const text = extractTextFromApiResponse(response.data);
+          return JSON.parse(extractJsonText(text || ''));
+        }
+
+        const client = new GoogleGenerativeAI(apiKey);
         const model = client.getGenerativeModel({ model: modelName });
         const result = await model.generateContent(prompt);
         const response = result.response;
         const text = response.text();
-
-        const cleaned = extractJsonText(text);
-        return JSON.parse(cleaned);
+        return JSON.parse(extractJsonText(text));
       } catch (error) {
         lastError = error;
         const status = error?.status || error?.response?.status;
@@ -428,29 +530,28 @@ async function callGemini(prompt, options = {}) {
         const isQuotaError = status === 429 || /quota|rate limit|rate-limit|over limit/i.test(message);
         const isAuthError = status === 401 || status === 403;
         if (isQuotaError || isAuthError) {
-          break; // move to the next API key
+          break;
         }
         if (status && ![404, 503].includes(status)) {
-          break; // avoid retrying the same model on non-retryable server errors
+          break;
         }
       }
     }
   }
 
   if (lastError instanceof SyntaxError) {
-    throw new Error(`Gemini returned invalid JSON: ${lastError.message}`);
+    throw new Error(`Model returned invalid JSON: ${lastError.message}`);
   }
-
-  throw lastError || new Error('Gemini request failed');
+  throw lastError || new Error('Model request failed');
 }
 
 export async function analyzeStudentProfile(username, profile, repos, options = {}) {
   const prompt = getStudentPrompt(username, profile, repos);
 
   try {
-    return await callGemini(prompt, options);
+    return await callModel(prompt, options);
   } catch (error) {
-    console.warn(`Gemini student analysis unavailable; using repository-based fallback: ${error.message}`);
+    console.warn(`Model student analysis unavailable; using repository-based fallback: ${error.message}`);
     return buildStudentFallback(username, profile, repos);
   }
 }
@@ -459,9 +560,9 @@ export async function matchJobDescription(username, profile, technologies, jobDe
   const prompt = getJobMatchPrompt(username, profile, technologies, jobDescription);
 
   try {
-    return await callGemini(prompt, options);
+    return await callModel(prompt, options);
   } catch (error) {
-    console.warn(`Gemini job matching unavailable; using stack-based fallback: ${error.message}`);
+    console.warn(`Model job matching unavailable; using stack-based fallback: ${error.message}`);
     return buildJobMatchFallback(profile, technologies, jobDescription);
   }
 }
@@ -470,9 +571,9 @@ export async function evaluateCandidateForRecruiter(username, profile, repos, op
   const prompt = getRecruiterPrompt(username, profile, repos);
 
   try {
-    return await callGemini(prompt, options);
+    return await callModel(prompt, options);
   } catch (error) {
-    console.warn(`Gemini recruiter evaluation unavailable; using repository-based fallback: ${error.message}`);
+    console.warn(`Model recruiter evaluation unavailable; using repository-based fallback: ${error.message}`);
     return buildRecruiterFallback(username, profile, repos);
   }
 }

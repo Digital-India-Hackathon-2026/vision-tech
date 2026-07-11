@@ -3,11 +3,28 @@ import { evaluateCandidate, getSavedReports, loginRecruiter, saveReport, signupR
 
 const SKILLS = ['Java', 'Python', 'JavaScript', 'TypeScript', 'React', 'Node.js', 'Express.js', 'Spring Boot', 'Django', 'SQL', 'MongoDB', 'PostgreSQL', 'Redis', 'Docker', 'Kubernetes', 'AWS', 'Azure', 'Git', 'GitHub', 'REST APIs', 'GraphQL', 'Microservices', 'DevOps', 'CI/CD', 'Machine Learning', 'Deep Learning', 'Data Structures', 'Algorithms', 'System Design', 'Linux'];
 const ROLES = ['Select a role', 'Frontend Developer', 'Backend Developer', 'Full Stack Developer', 'Software Engineer', 'Java Developer', 'Python Developer', 'React Developer', 'Node.js Developer', 'DevOps Engineer', 'Cloud Engineer', 'Data Engineer', 'Data Scientist', 'Machine Learning Engineer', 'AI Engineer', 'Mobile App Developer', 'QA / Test Engineer', 'Cybersecurity Engineer', 'Engineering Manager'];
+const MODEL_PROVIDERS = ['gemini', 'openai', 'grok'];
+const MODEL_OPTIONS = {
+  gemini: ['default'],
+  openai: ['gpt-4.1-mini', 'gpt-4o-mini', 'gpt-3.5-turbo'],
+  grok: ['grok-1'],
+};
 const DEFAULT_REQUIREMENTS = { role: '', department: '', experience: '0-2 years', employmentType: 'Full-time', workMode: 'Hybrid', location: '', skills: [], description: '' };
 
 const normalize = (value = '') => value.toLowerCase().replace(/[^a-z0-9+#.]/g, '');
 const scoreLabel = (score) => score >= 90 ? ['Excellent Match', 'excellent'] : score >= 80 ? ['Strong Match', 'strong'] : score >= 70 ? ['Good Match', 'good'] : score >= 60 ? ['Average Match', 'average'] : ['Below Expectations', 'below'];
 const initials = (name = '') => name.split(/[\s-]/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'GH';
+
+// Extract a GitHub username from an input which may be a plain username, @handle, or a full URL
+function extractGithubUsername(input = '') {
+  const raw = String(input || '').trim();
+  if (!raw) return '';
+  // If it's a GitHub URL like https://github.com/username or github.com/username
+  const urlMatch = raw.match(/github\.com\/([^\/\s?#]+)/i);
+  if (urlMatch && urlMatch[1]) return urlMatch[1].replace(/^@/, '');
+  // Otherwise strip leading @ and take the first token
+  return raw.replace(/^@/, '').split(/[\s\/\\?#]/)[0];
+}
 
 function RequirementForm({ requirements, setRequirements, onContinue }) {
   const [skillInput, setSkillInput] = useState('');
@@ -39,7 +56,7 @@ function RequirementForm({ requirements, setRequirements, onContinue }) {
         <Select label="Work mode" value={requirements.workMode} onChange={(value) => set('workMode', value)} options={['Remote', 'Hybrid', 'On-site']} />
         <Field label="Location" value={requirements.location} onChange={(value) => set('location', value)} placeholder="Bengaluru, India" />
       </div></div>
-      <div className="panel requirement-panel"><h3>Required technical skills</h3><p className="muted">Search the catalogue or add a custom technology.</p><div className="skill-entry"><input list="skill-catalogue" value={skillInput} onChange={(event) => setSkillInput(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && (event.preventDefault(), addSkill())} placeholder="Search or add a skill" /><datalist id="skill-catalogue">{SKILLS.map((skill) => <option value={skill} key={skill} />)}</datalist><button onClick={() => addSkill()} aria-label="Add skill">+</button></div>
+      <div className="panel requirement-panel"><h3>Required technical skills</h3><p className="muted">Search the catalogue or add a custom technology.</p><div className="skill-entry"><input id="skill-entry-input" list="skill-catalogue" value={skillInput} onChange={(event) => setSkillInput(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && (event.preventDefault(), addSkill())} placeholder="Search or add a skill" /><datalist id="skill-catalogue">{SKILLS.map((skill) => <option value={skill} key={skill} />)}</datalist><button onClick={() => addSkill()} aria-label="Add skill">+</button></div>
         <div className="skill-chips">{requirements.skills.length ? requirements.skills.map((skill) => <span className="skill-chip" key={skill}>{skill}<button onClick={() => set('skills', requirements.skills.filter((item) => item !== skill))}>×</button></span>) : <span className="empty-copy">No skills added yet.</span>}</div></div>
     </div>
     <div className="panel job-description"><div className="panel-title-row"><div><h3>Job description</h3><p className="muted">Paste the full role brief to extract qualification signals.</p></div><button className="secondary-button" onClick={extract} disabled={!requirements.description.trim()}>Extract requirements</button></div><textarea value={requirements.description} onChange={(event) => set('description', event.target.value)} placeholder="Paste responsibilities, requirements, and preferred qualifications here…" />
@@ -47,17 +64,29 @@ function RequirementForm({ requirements, setRequirements, onContinue }) {
   </section>;
 }
 
-function CandidateAnalysis({ requirements, setRequirements, candidates, setCandidates, onSave }) {
+function CandidateAnalysis({ requirements, setRequirements, candidates, setCandidates, onSave, provider, model, setProvider, setModel }) {
   const [username, setUsername] = useState(''); const [loading, setLoading] = useState(false); const [error, setError] = useState('');
   const analyze = async (value = username) => {
-    const clean = value.trim().replace(/^@/, ''); if (!clean) return; setLoading(true); setError('');
-    try { const data = await evaluateCandidate(clean); const candidate = createCandidate(clean, data, requirements); setCandidates((current) => [candidate, ...current.filter((item) => item.username.toLowerCase() !== clean.toLowerCase())]); onSave(candidate); setUsername(''); }
-    catch (err) { setError(err.response?.data?.message || 'Unable to analyze this GitHub profile. Check the username and try again.'); } finally { setLoading(false); }
+    const clean = extractGithubUsername(value);
+    if (!clean) return;
+    setLoading(true);
+    setError('');
+    try {
+      const data = await evaluateCandidate(clean, { provider, model });
+      const candidate = createCandidate(clean, data, requirements);
+      setCandidates((current) => [candidate, ...current.filter((item) => item.username.toLowerCase() !== clean.toLowerCase())]);
+      onSave(candidate);
+      setUsername('');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Unable to analyze this GitHub profile. Check the username and try again.');
+    } finally {
+      setLoading(false);
+    }
   };
   const candidate = candidates[0];
   const updateRequirement = (key, value) => setRequirements((current) => ({ ...current, [key]: value }));
   return <section className="recruiter-section"><div className="section-heading"><div><p className="eyebrow">AI screening workflow</p><h1>Candidate analysis</h1><p>Add the hiring requirement, job description, and GitHub username. Vision Tech turns the public engineering footprint into a structured recruiter report.</p></div></div>
-    <div className="analysis-workflow"><div className="panel workflow-step"><span>01</span><h3>Requirement role</h3><Select label="Role you are hiring for" value={requirements.role || 'Select a role'} onChange={(value) => updateRequirement('role', value === 'Select a role' ? '' : value)} options={ROLES} /><Select label="Required experience" value={requirements.experience} onChange={(value) => updateRequirement('experience', value)} options={['0-2 years', '3-5 years', '6-10 years', '10+ years']} /></div><div className="panel workflow-step"><span>02</span><h3>Job description</h3><label className="field"><span>Responsibilities and mandatory skills</span><textarea value={requirements.description} onChange={(event) => updateRequirement('description', event.target.value)} placeholder="Paste the job description here. Technologies named here are used for the JD match score." /></label></div><div className="panel workflow-step"><span>03</span><h3>GitHub profile</h3><label className="field"><span>Public GitHub username</span><input value={username} onChange={(event) => setUsername(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && analyze()} placeholder="e.g. torvalds" /></label><button className="primary-button" disabled={loading || !username.trim()} onClick={() => analyze()}>{loading ? 'Analyzing profile…' : 'Generate analysis'}</button></div></div>{error && <div className="alert-error">{error}</div>}
+    <div className="analysis-workflow"><div className="panel workflow-step"><span>01</span><h3>Requirement role</h3><Select label="Role you are hiring for" value={requirements.role || 'Select a role'} onChange={(value) => updateRequirement('role', value === 'Select a role' ? '' : value)} options={ROLES} /><Select label="Required experience" value={requirements.experience} onChange={(value) => updateRequirement('experience', value)} options={['0-2 years', '3-5 years', '6-10 years', '10+ years']} /></div><div className="panel workflow-step"><span>02</span><h3>Job description</h3><label className="field"><span>Responsibilities and mandatory skills</span><textarea value={requirements.description} onChange={(event) => updateRequirement('description', event.target.value)} placeholder="Paste the job description here. Technologies named here are used for the JD match score." /></label></div><div className="panel workflow-step"><span>03</span><h3>AI model selection</h3><Select label="Model provider" value={provider} onChange={(value) => { setProvider(value); setModel(MODEL_OPTIONS[value][0]); }} options={MODEL_PROVIDERS} /><Select label="Model" value={model} onChange={setModel} options={MODEL_OPTIONS[provider]} /></div><div className="panel workflow-step"><span>04</span><h3>GitHub profile</h3><label className="field"><span>Public GitHub username</span><input value={username} onChange={(event) => setUsername(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && analyze()} placeholder="e.g. torvalds" /></label><button className="primary-button" disabled={loading || !username.trim()} onClick={() => analyze()}>{loading ? 'Analyzing profile…' : 'Generate analysis'}</button></div></div>{error && <div className="alert-error">{error}</div>}
     {loading && <LoadingCards />}{candidate && <CandidateReport candidate={candidate} />}
   </section>;
 }
@@ -73,23 +102,50 @@ function CandidateReport({ candidate }) {
   </div>;
 }
 
-function Comparison({ requirements, candidates, setCandidates, onSave }) {
+function Comparison({ requirements, candidates, setCandidates, onSave, provider, model }) {
   const [fileError, setFileError] = useState(''); const [running, setRunning] = useState(false); const [filter, setFilter] = useState('all');
-  const analyzeFile = async (event) => { const file = event.target.files?.[0]; if (!file) return; if (!file.name.endsWith('.txt')) { setFileError('Upload a .txt file with one GitHub username per line.'); return; } const names = [...new Set((await file.text()).split(/[\r\n,\s]+/).map((item) => item.trim().replace(/^@/, '')).filter(Boolean))].slice(0, 50); if (!names.length) { setFileError('No GitHub usernames were found in that file.'); return; } setRunning(true); setFileError(''); const results = []; for (const name of names) { try { const data = await evaluateCandidate(name); results.push(createCandidate(name, data, requirements)); } catch { results.push({ username: name, name, error: true, match: 0 }); } } setCandidates((current) => [...results, ...current.filter((candidate) => !results.some((result) => result.username.toLowerCase() === candidate.username.toLowerCase()))]); results.filter((candidate) => !candidate.error).forEach(onSave); setRunning(false); };
+  const analyzeFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.name.endsWith('.txt')) { setFileError('Upload a .txt file with one GitHub username per line.'); return; }
+    const names = [...new Set((await file.text()).split(/[\r\n,\s]+/).map((item) => extractGithubUsername(item)).filter(Boolean))].slice(0, 50);
+    if (!names.length) { setFileError('No GitHub usernames were found in that file.'); return; }
+    setRunning(true);
+    setFileError('');
+    const results = [];
+    for (const name of names) {
+      try {
+        const data = await evaluateCandidate(name, { provider, model });
+        results.push(createCandidate(name, data, requirements));
+      } catch {
+        results.push({ username: name, error: true, match: 0 });
+      }
+    }
+    setCandidates((current) => [...results, ...current.filter((candidate) => !results.some((result) => result.username.toLowerCase() === candidate.username.toLowerCase()))]);
+    results.filter((candidate) => !candidate.error).forEach(onSave);
+    setRunning(false);
+  };
   const ranked = [...candidates].filter((candidate) => filter === 'all' || scoreLabel(candidate.match)[1] === filter).sort((a, b) => b.match - a.match);
   return <section className="recruiter-section"><div className="section-heading"><div><p className="eyebrow">Shortlist intelligence</p><h1>Compare candidates</h1><p>Upload up to 50 public GitHub usernames, score them, and surface the strongest shortlist.</p></div><div className="export-actions"><button onClick={() => exportCsv(ranked)}>Export CSV</button><button onClick={() => exportExcel(ranked)}>Export Excel</button><button onClick={() => window.print()}>Print / PDF</button></div></div>
-    <label className="upload-zone"><input type="file" accept=".txt,text/plain" onChange={analyzeFile} /><span>↑</span><strong>{running ? 'Analyzing candidates…' : 'Upload candidate list'}</strong><small>One GitHub username per line · .txt · max 50 candidates</small></label>{fileError && <div className="alert-error">{fileError}</div>}
-    <div className="ranking-toolbar"><div className="ranking-summary"><strong>{ranked.length} candidates</strong><span>Active role: {requirements.role || 'Not specified'}</span></div><select value={filter} onChange={(event) => setFilter(event.target.value)}><option value="all">All recommendations</option><option value="excellent">Excellent Match</option><option value="strong">Strong Match</option><option value="good">Good Match</option><option value="average">Average Match</option><option value="below">Below Expectations</option></select></div>
+    <label className="upload-zone" htmlFor="upload-input"><input id="upload-input" type="file" accept=".txt,text/plain" onChange={analyzeFile} /><span>↑</span><strong>{running ? 'Analyzing candidates…' : 'Upload candidate list'}</strong><small>One GitHub username per line · .txt · max 50 candidates</small></label>{fileError && <div className="alert-error">{fileError}</div>}
+    <div className="ranking-toolbar"><div className="ranking-summary"><strong>{ranked.length} candidates</strong><span>Active role: {requirements.role || 'Not specified'}</span></div><select id="ranking-filter-select" value={filter} onChange={(event) => setFilter(event.target.value)}><option value="all">All recommendations</option><option value="excellent">Excellent Match</option><option value="strong">Strong Match</option><option value="good">Good Match</option><option value="average">Average Match</option><option value="below">Below Expectations</option></select></div>
     {ranked.length ? <div className="panel table-wrap"><table><thead><tr><th>Rank</th><th>Candidate</th><th>Match</th><th>Skills</th><th>JD match</th><th>GitHub score</th><th>Recommendation</th></tr></thead><tbody>{ranked.map((candidate, index) => { const [label, tone] = scoreLabel(candidate.match); return <tr key={candidate.username} className={index < 3 ? 'top-candidate' : ''}><td>{index < 3 ? ['🥇', '🥈', '🥉'][index] : `#${index + 1}`}</td><td><b>{candidate.name}</b><small>@{candidate.username}</small></td><td><strong>{candidate.match}%</strong></td><td>{candidate.metrics['Technical Skills']}%</td><td>{candidate.metrics['Job Description']}%</td><td>{candidate.metrics['GitHub Activity']}%</td><td><span className={`score-badge ${tone}`}>{label}</span></td></tr>; })}</tbody></table></div> : <EmptyState title="Your comparison table is ready" text="Upload a .txt list to create a ranked, exportable candidate shortlist." />}
     {ranked.length > 0 && <div className="ai-summary panel"><span className="summary-icon">✦</span><div><p className="eyebrow">AI summary</p><h3>Interview shortlist recommendation</h3><p>{summaryText(ranked, requirements)}</p></div></div>}</section>;
 }
 
-function TwoProfileComparison({ requirements, setCandidates, onSave }) { const [first, setFirst] = useState(''); const [second, setSecond] = useState(''); const [results, setResults] = useState([]); const [loading, setLoading] = useState(false); const [error, setError] = useState(''); const compare = async () => { if (!first.trim() || !second.trim()) return; setLoading(true); setError(''); try { const raw = await Promise.all([evaluateCandidate(first.trim().replace(/^@/, '')), evaluateCandidate(second.trim().replace(/^@/, ''))]); const analyzed = raw.map((data, index) => createCandidate(index ? second.trim().replace(/^@/, '') : first.trim().replace(/^@/, ''), data, requirements)); setResults(analyzed); setCandidates((current) => [...analyzed, ...current.filter((candidate) => !analyzed.some((item) => item.username.toLowerCase() === candidate.username.toLowerCase()))]); analyzed.forEach(onSave); } catch (err) { setError(err.response?.data?.message || 'One or both GitHub profiles could not be analyzed.'); } finally { setLoading(false); } }; return <section className="recruiter-section"><div className="section-heading"><div><p className="eyebrow">Side-by-side evidence</p><h1>Compare two GitHub profiles</h1><p>Use the active role and job description to see which profile has stronger technical evidence.</p></div></div><div className="two-compare-form panel"><Field label="First GitHub username" value={first} onChange={setFirst} placeholder="e.g. octocat" /><span>VS</span><Field label="Second GitHub username" value={second} onChange={setSecond} placeholder="e.g. defunkt" /><button className="primary-button" disabled={loading || !first.trim() || !second.trim()} onClick={compare}>{loading ? 'Comparing…' : 'Compare profiles'}</button></div>{error && <div className="alert-error">{error}</div>}{results.length === 2 && <div className="two-profile-results"><div className="panel comparison-winner"><p className="eyebrow">Comparison result</p><h2>{results[0].match === results[1].match ? 'Both profiles are evenly matched' : `${results[0].match > results[1].match ? results[0].name : results[1].name} is the stronger match`}</h2><p className="muted">Scores reflect the currently entered role and job description.</p></div><div className="panel table-wrap"><table><thead><tr><th>Parameter</th><th>{results[0].name}</th><th>{results[1].name}</th></tr></thead><tbody>{[['Overall match', 'match'], ...Object.keys(results[0].metrics).map((key) => [key, key])].map(([label, key]) => <tr key={key}><td><b>{label}</b></td><td className={results[0][key] ?? results[0].metrics[key] >= (results[1][key] ?? results[1].metrics[key]) ? 'winner-cell' : ''}>{key === 'match' ? results[0].match : results[0].metrics[key]}%</td><td className={results[1][key] ?? results[1].metrics[key] >= (results[0][key] ?? results[0].metrics[key]) ? 'winner-cell' : ''}>{key === 'match' ? results[1].match : results[1].metrics[key]}%</td></tr>)}</tbody></table></div><div className="comparison-cards"><CandidateReport candidate={results[0]} /><CandidateReport candidate={results[1]} /></div></div>}</section>; }
+function TwoProfileComparison({ requirements, setCandidates, onSave, provider, model }) { const [first, setFirst] = useState(''); const [second, setSecond] = useState(''); const [results, setResults] = useState([]); const [loading, setLoading] = useState(false); const [error, setError] = useState(''); const compare = async () => { if (!first.trim() || !second.trim()) return; setLoading(true); setError(''); try { const raw = await Promise.all([evaluateCandidate(first.trim().replace(/^@/, ''), { provider, model }), evaluateCandidate(second.trim().replace(/^@/, ''), { provider, model })]); const analyzed = raw.map((data, index) => createCandidate(index ? second.trim().replace(/^@/, '') : first.trim().replace(/^@/, ''), data, requirements)); setResults(analyzed); setCandidates((current) => [...analyzed, ...current.filter((candidate) => !analyzed.some((item) => item.username.toLowerCase() === candidate.username.toLowerCase()))]); analyzed.forEach(onSave); } catch (err) { setError(err.response?.data?.message || 'One or both GitHub profiles could not be analyzed.'); } finally { setLoading(false); } }; return <section className="recruiter-section"><div className="section-heading"><div><p className="eyebrow">Side-by-side evidence</p><h1>Compare two GitHub profiles</h1><p>Use the active role and job description to see which profile has stronger technical evidence.</p></div></div><div className="two-compare-form panel"><Field label="First GitHub username" value={first} onChange={setFirst} placeholder="e.g. octocat" /><span>VS</span><Field label="Second GitHub username" value={second} onChange={setSecond} placeholder="e.g. defunkt" /><button className="primary-button" disabled={loading || !first.trim() || !second.trim()} onClick={compare}>{loading ? 'Comparing…' : 'Compare profiles'}</button></div>{error && <div className="alert-error">{error}</div>}{results.length === 2 && <div className="two-profile-results"><div className="panel comparison-winner"><p className="eyebrow">Comparison result</p><h2>{results[0].match === results[1].match ? 'Both profiles are evenly matched' : `${results[0].match > results[1].match ? results[0].name : results[1].name} is the stronger match`}</h2><p className="muted">Scores reflect the currently entered role and job description.</p></div><div className="panel table-wrap"><table><thead><tr><th>Parameter</th><th>{results[0].name}</th><th>{results[1].name}</th></tr></thead><tbody>{[['Overall match', 'match'], ...Object.keys(results[0].metrics).map((key) => [key, key])].map(([label, key]) => <tr key={key}><td><b>{label}</b></td><td className={results[0][key] ?? results[0].metrics[key] >= (results[1][key] ?? results[1].metrics[key]) ? 'winner-cell' : ''}>{key === 'match' ? results[0].match : results[0].metrics[key]}%</td><td className={results[1][key] ?? results[1].metrics[key] >= (results[0][key] ?? results[0].metrics[key]) ? 'winner-cell' : ''}>{key === 'match' ? results[1].match : results[1].metrics[key]}%</td></tr>)}</tbody></table></div><div className="comparison-cards"><CandidateReport candidate={results[0]} /><CandidateReport candidate={results[1]} /></div></div>}</section>; }
 
 function Reports() { const [reports, setReports] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { getSavedReports().then(setReports).catch(() => setReports([])).finally(() => setLoading(false)); }, []); return <section className="recruiter-section"><div className="section-heading"><div><p className="eyebrow">Hiring record</p><h1>Reports</h1><p>Saved candidate evaluations for your team.</p></div></div>{loading ? <LoadingCards /> : reports.length ? <div className="panel table-wrap"><table><thead><tr><th>Candidate</th><th>Role</th><th>Score</th><th>Created</th></tr></thead><tbody>{reports.map((report) => <tr key={report._id}><td><b>{report.username}</b></td><td>{report.role || 'Candidate review'}</td><td>{report.score || 0}/100</td><td>{report.createdAt ? new Date(report.createdAt).toLocaleDateString() : 'Recently'}</td></tr>)}</tbody></table></div> : <EmptyState title="No saved reports" text="Completed candidate analyses will be saved here." />}</section>; }
 
 function RecruiterDashboard() {
   const [token, setToken] = useState(localStorage.getItem('githire_token')); const [tab, setTab] = useState('analysis'); const [theme, setTheme] = useState(localStorage.getItem('vision-theme') || 'light'); const [requirements, setRequirements] = useState(() => JSON.parse(localStorage.getItem('vision-requirements') || 'null') || DEFAULT_REQUIREMENTS); const [candidates, setCandidates] = useState(() => JSON.parse(localStorage.getItem('vision-candidates') || '[]'));
+  const [provider, setProvider] = useState('gemini');
+  const [model, setModel] = useState(MODEL_OPTIONS.gemini[0]);
+  useEffect(() => {
+    if (!MODEL_OPTIONS[provider]?.includes(model)) {
+      setModel(MODEL_OPTIONS[provider][0]);
+    }
+  }, [provider, model]);
   useEffect(() => { localStorage.setItem('vision-requirements', JSON.stringify(requirements)); }, [requirements]); useEffect(() => { localStorage.setItem('vision-candidates', JSON.stringify(candidates)); }, [candidates]); useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('vision-theme', theme); }, [theme]);
   useEffect(() => {
     if (!token) return undefined;
@@ -106,7 +162,7 @@ function RecruiterDashboard() {
   if (!token) return <RecruiterAuth onAuthenticated={setToken} />;
   const nav = [['analysis', 'Analysis'], ['compare', 'Compare Two Profiles'], ['multiple', 'Multiple Profiles']]; const dashboardCandidates = candidates.slice(0, 5);
   return <div className="recruiter-app"><header className="recruiter-navbar"><a href="/" className="recruiter-brand"><span>G</span><div>GitHire AI<small>Recruiter intelligence</small></div></a><nav>{nav.map(([id, label]) => <button className={tab === id ? 'active' : ''} onClick={() => setTab(id)} key={id}>{label}</button>)}</nav><div className="nav-actions"><button className="icon-button" title="Toggle theme" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? '◐' : '☀'}</button><button className="logout-button" onClick={() => { localStorage.removeItem('githire_token'); window.location.assign('/'); }}>Logout</button></div></header><main className="recruiter-main">
-    {tab === 'analysis' && <CandidateAnalysis requirements={requirements} setRequirements={setRequirements} candidates={candidates} setCandidates={setCandidates} onSave={saveCandidate} />}{tab === 'compare' && <TwoProfileComparison requirements={requirements} setCandidates={setCandidates} onSave={saveCandidate} />}{tab === 'multiple' && <Comparison requirements={requirements} candidates={candidates} setCandidates={setCandidates} onSave={saveCandidate} />}</main><footer className="recruiter-footer"><span>Developed by Vision Tech</span><span>© 2026 Vision Tech · All Rights Reserved</span></footer></div>;
+    {tab === 'analysis' && <CandidateAnalysis requirements={requirements} setRequirements={setRequirements} candidates={candidates} setCandidates={setCandidates} onSave={saveCandidate} provider={provider} model={model} setProvider={setProvider} setModel={setModel} />}{tab === 'compare' && <TwoProfileComparison requirements={requirements} setCandidates={setCandidates} onSave={saveCandidate} provider={provider} model={model} />}{tab === 'multiple' && <Comparison requirements={requirements} candidates={candidates} setCandidates={setCandidates} onSave={saveCandidate} provider={provider} model={model} />}</main><footer className="recruiter-footer"><span>Developed by Vision Tech</span><span>© 2026 Vision Tech · All Rights Reserved</span></footer></div>;
 }
 
 function Dashboard({ requirements, candidates, onNavigate }) { const best = candidates[0]; return <section className="recruiter-section"><div className="welcome-banner"><div><p className="eyebrow">Recruitment command center</p><h1>Make every shortlist evidence-led.</h1><p>Turn GitHub activity into consistent, requirement-aware hiring signals.</p><button className="primary-button" onClick={() => onNavigate('analysis')}>Start an analysis</button></div><div className="banner-stats"><div><strong>{requirements.skills.length}</strong><span>required skills</span></div><div><strong>{candidates.length}</strong><span>candidates analyzed</span></div><div><strong>{best?.match || '—'}{best ? '%' : ''}</strong><span>best current match</span></div></div></div><div className="dashboard-overview"><div className="panel"><p className="eyebrow">Active hiring brief</p><h2>{requirements.role || 'Create a role brief'}</h2><p className="muted">{requirements.department || 'Department not set'} · {requirements.experience}</p><div className="skill-chips">{requirements.skills.length ? requirements.skills.slice(0, 8).map((skill) => <span className="skill-chip" key={skill}>{skill}</span>) : <span className="empty-copy">Add the role and JD in Analysis to begin matching.</span>}</div><button className="text-button" onClick={() => onNavigate('analysis')}>Edit role and job description →</button></div><div className="panel"><p className="eyebrow">Candidate funnel</p><div className="funnel">{[['Excellent', candidates.filter((candidate) => candidate.match >= 90).length], ['Strong', candidates.filter((candidate) => candidate.match >= 80 && candidate.match < 90).length], ['Good', candidates.filter((candidate) => candidate.match >= 70 && candidate.match < 80).length], ['Other', candidates.filter((candidate) => candidate.match < 70).length]].map(([label, value]) => <div key={label}><span>{label}</span><b>{value}</b></div>)}</div></div></div>{candidates.length ? <div className="panel table-wrap"><div className="panel-title-row"><h3>Top candidates</h3><button className="text-button" onClick={() => onNavigate('multiple')}>View ranking →</button></div><table><thead><tr><th>Candidate</th><th>Overall match</th><th>Skills</th><th>Recommendation</th></tr></thead><tbody>{candidates.map((candidate) => { const [label, tone] = scoreLabel(candidate.match); return <tr key={candidate.username}><td><b>{candidate.name}</b><small>@{candidate.username}</small></td><td>{candidate.match}%</td><td>{candidate.metrics['Technical Skills']}%</td><td><span className={`score-badge ${tone}`}>{label}</span></td></tr>; })}</tbody></table></div> : <EmptyState title="Start your first shortlist" text="Add a role and job description, then analyze a GitHub candidate or upload a candidate list." action="Analyze a candidate" onAction={() => onNavigate('analysis')} />}</section>; }
@@ -115,8 +171,27 @@ function RecruiterAuth({ onAuthenticated }) { const [login, setLogin] = useState
 
 function Profile({ requirements, clear }) { return <section className="recruiter-section"><div className="section-heading"><div><p className="eyebrow">Workspace preferences</p><h1>Profile & settings</h1><p>Manage recruiter workspace data stored in this browser.</p></div></div><div className="panel settings-panel"><h3>Recruiting workspace</h3><p className="muted">The active brief is saved locally so it persists between sessions on this device.</p><dl><dt>Active role</dt><dd>{requirements.role || 'Not configured'}</dd><dt>Required skills</dt><dd>{requirements.skills.length}</dd></dl><button className="danger-button" onClick={clear}>Clear local workspace data</button></div></section>; }
 function ParameterGroup({ title, items, values }) { return <div className="parameter-group"><h4>{title}</h4>{items.map((item, index) => <div key={item}><span>{item}</span><b>{values[index]}</b></div>)}</div>; }
-function Field({ label, value, onChange, placeholder, type = 'text', required = false }) { return <label className="field"><span>{label}</span><input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} required={required} /></label>; }
-function Select({ label, value, onChange, options }) { return <label className="field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option}>{option}</option>)}</select></label>; }
+function Field({ label, value, onChange, placeholder, type = 'text', required = false, id }) {
+  const rid = id || React.useId?.() || `field-${label.replace(/\s+/g, '-').toLowerCase()}`;
+  return (
+    <label className="field" htmlFor={rid}>
+      <span>{label}</span>
+      <input id={rid} type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} required={required} />
+    </label>
+  );
+}
+
+function Select({ label, value, onChange, options, id }) {
+  const rid = id || React.useId?.() || `select-${label.replace(/\s+/g, '-').toLowerCase()}`;
+  return (
+    <label className="field" htmlFor={rid}>
+      <span>{label}</span>
+      <select id={rid} value={value} onChange={(event) => onChange(event.target.value)}>
+        {options.map((option) => <option key={option}>{option}</option>)}
+      </select>
+    </label>
+  );
+}
 function Insight({ label, items }) { return <div className="insight"><strong>{label}</strong>{items?.length ? <ul>{items.map((item) => <li key={item}>{item}</li>)}</ul> : <span>Not detected</span>}</div>; }
 function RequirementPill({ requirements }) { return <div className="requirement-pill"><strong>{requirements.role || 'No role selected'}</strong><span>{requirements.skills.length} skills</span></div>; }
 function Metric({ label, value }) { return <div className="metric-card"><span>{label}</span><strong>{value}%</strong><div><i style={{ width: `${value}%` }} /></div></div>; }

@@ -16,19 +16,19 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-export const analyzeGithub = async (username) => {
-  const { data } = await api.post('/analyze', { username });
+export const analyzeGithub = async (username, options = {}) => {
+  const { data } = await api.post('/analyze', { username, ...options });
   return data;
 };
 
-export const analyzeGithubProgressive = async (username, onUpdate) => {
+export const analyzeGithubProgressive = async (username, options = {}, onUpdate) => {
   try {
     const basicResponse = await api.post('/analyze/basic', { username });
     if (onUpdate) {
       onUpdate({ stage: 'basic', data: basicResponse.data });
     }
 
-    const detailsResponse = await api.post('/analyze/details', { username });
+    const detailsResponse = await api.post('/analyze/details', { username, ...options });
     if (onUpdate) {
       onUpdate({ stage: 'details', data: detailsResponse.data });
     }
@@ -46,8 +46,8 @@ export const analyzeGithubProgressive = async (username, onUpdate) => {
   }
 };
 
-export const matchJobDescription = async (username, jobDescription) => {
-  const { data } = await api.post('/match-job', { username, jobDescription });
+export const matchJobDescription = async (username, jobDescription, options = {}) => {
+  const { data } = await api.post('/match-job', { username, jobDescription, ...options });
   return data;
 };
 
@@ -61,8 +61,9 @@ export const signupRecruiter = async (email, password, name) => {
   return data;
 };
 
-export const evaluateCandidate = async (username) => {
-  const { data } = await api.post('/recruiter/evaluate', { username });
+export const evaluateCandidate = async (username, options = {}) => {
+  const body = { username, ...options };
+  const { data } = await api.post('/recruiter/evaluate', body);
   return data;
 };
 

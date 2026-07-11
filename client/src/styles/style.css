@@ -347,6 +347,63 @@ input, textarea { font-family: inherit; }
   cursor: not-allowed;
 }
 
+/* Provider / Model selector styling (compact, modern) */
+.model-selection-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-left: 12px;
+}
+
+.select-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.select-field span {
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.select-field select {
+  min-width: 160px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  padding: 8px 10px;
+  border-radius: 10px;
+  box-shadow: none;
+  height: 40px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.select-field.fixed-model {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.fixed-model-value {
+  min-width: 160px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg-card);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+@media (max-width: 720px) {
+  .model-selection-row { flex-direction: column; align-items: stretch; margin-left: 0; gap: 8px; }
+  .select-field select, .fixed-model-value { min-width: 0; width: 100%; }
+}
+
 .hero-stats {
   display: flex;
   justify-content: flex-start;

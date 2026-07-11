@@ -5,11 +5,13 @@ import helmet from 'helmet';
 import mongoose from 'mongoose';
 import fs from 'fs';
 import path from 'path';
+import net from 'net';
 import { fileURLToPath } from 'url';
 import routes from './routes.js';
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const basePort = Number(process.env.PORT) || 5000;
+const MAX_PORT_TRIES = 10;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDistPath = path.resolve(__dirname, '../client/dist');
 const clientIndexPath = path.join(clientDistPath, 'index.html');
@@ -47,6 +49,25 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Internal server error' });
 });
 
+function isPortAvailable(port) {
+  return new Promise((resolve) => {
+    const tester = net.createServer()
+      .once('error', () => resolve(false))
+      .once('listening', () => tester.once('close', () => resolve(true)).close())
+      .listen(port);
+  });
+}
+
+async function findAvailablePort(startPort, maxTries) {
+  for (let offset = 0; offset < maxTries; offset += 1) {
+    const testPort = startPort + offset;
+    if (await isPortAvailable(testPort)) {
+      return testPort;
+    }
+  }
+  throw new Error(`No available ports found between ${startPort} and ${startPort + maxTries - 1}`);
+}
+
 // Connect to MongoDB and start server
 async function start() {
   try {
@@ -62,9 +83,10 @@ async function start() {
       console.warn('Auth features will be unavailable');
     }
 
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-      console.log(`Health check: http://localhost:${PORT}/health`);
+    const finalPort = await findAvailablePort(basePort, MAX_PORT_TRIES);
+    app.listen(finalPort, () => {
+      console.log(`Server running on port ${finalPort}`);
+      console.log(`Health check: http://localhost:${finalPort}/health`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);

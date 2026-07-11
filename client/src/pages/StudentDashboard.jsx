@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { analyzeGithubProgressive, matchJobDescription } from '../api';
 import SkeletonLoader from '../components/Skeleton';
 import RepoCard from '../components/RepoCard';
@@ -15,6 +15,9 @@ const PROGRESS_MESSAGES = [
 
 function StudentDashboard() {
   const { username } = useParams();
+  const [searchParams] = useSearchParams();
+  const provider = searchParams.get('provider') || 'gemini';
+  const model = searchParams.get('model') || 'gemini-3.5-flash';
   const [loading, setLoading] = useState(true);
   const [snapshot, setSnapshot] = useState(null);
   const [data, setData] = useState(null);
@@ -31,7 +34,7 @@ function StudentDashboard() {
       setSnapshot(null);
       setData(null);
       setAnalysisStage(PROGRESS_MESSAGES[0]);
-      const result = await analyzeGithubProgressive(username, ({ stage, data: stageData }) => {
+      const result = await analyzeGithubProgressive(username, { provider, model }, ({ stage, data: stageData }) => {
         if (stage === 'basic') {
           setSnapshot(stageData);
           setAnalysisStage('Preparing AI insights...');
@@ -58,7 +61,7 @@ function StudentDashboard() {
     if (!jobDescription.trim()) return;
     try {
       setMatchLoading(true);
-      const result = await matchJobDescription(username, jobDescription);
+      const result = await matchJobDescription(username, jobDescription, { provider, model });
       setMatchResult(result);
     } catch (err) {
       setMatchResult({ error: err.response?.data?.message || 'Failed to match job description' });

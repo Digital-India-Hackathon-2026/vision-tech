@@ -9,7 +9,7 @@ const router = Router();
 // Student: Analyze GitHub profile
 router.post('/analyze', async (req, res) => {
   try {
-    const { username } = req.body;
+    const { username, provider, model } = req.body;
     if (!username || !username.trim()) {
       return res.status(400).json({ message: 'GitHub username is required' });
     }
@@ -28,14 +28,21 @@ router.post('/analyze', async (req, res) => {
     );
 
     // AI Analysis
-    const aiResult = await analyzeStudentProfile(cleanUsername, profile, analyzedRepos);
+    let aiResult;
+    try {
+      aiResult = await analyzeStudentProfile(cleanUsername, profile, analyzedRepos, { provider, model });
+    } catch (err) {
+      console.error('AI analysis failure for', { username: cleanUsername, provider, model, err: err && (err.message || err) });
+      // Fallback to repo-based analysis
+      aiResult = { score: 0, repositories: analyzedRepos };
+    }
 
     res.json({
       profile,
       ...aiResult,
     });
   } catch (error) {
-    console.error('Analysis error:', error.message, error.stack);
+    console.error('Analysis error:', error?.message, { username: req.body?.username, provider: req.body?.provider, model: req.body?.model, stack: error?.stack, response: error?.response?.data });
     if (error.response?.status === 404) {
       return res.status(404).json({ message: 'GitHub user not found' });
     }
@@ -84,7 +91,7 @@ router.post('/analyze/basic', async (req, res) => {
 // Student: Detailed analysis payload
 router.post('/analyze/details', async (req, res) => {
   try {
-    const { username } = req.body;
+    const { username, provider, model } = req.body;
     if (!username || !username.trim()) {
       return res.status(400).json({ message: 'GitHub username is required' });
     }
@@ -96,14 +103,20 @@ router.post('/analyze/details', async (req, res) => {
       repos.slice(0, 10).map((repo) => analyzeRepository(cleanUsername, repo))
     );
 
-    const aiResult = await analyzeStudentProfile(cleanUsername, profile, analyzedRepos);
+    let aiResult;
+    try {
+      aiResult = await analyzeStudentProfile(cleanUsername, profile, analyzedRepos, { provider, model });
+    } catch (err) {
+      console.error('AI detailed analysis failure for', { username: cleanUsername, provider, model, err: err && (err.message || err) });
+      aiResult = { score: 0, repositories: analyzedRepos };
+    }
 
     res.json({
       profile,
       ...aiResult,
     });
   } catch (error) {
-    console.error('Detailed analysis error:', error.message, error.stack);
+    console.error('Detailed analysis error:', error?.message, { username: req.body?.username, provider: req.body?.provider, model: req.body?.model, stack: error?.stack, response: error?.response?.data });
     if (error.response?.status === 404) {
       return res.status(404).json({ message: 'GitHub user not found' });
     }
@@ -117,7 +130,7 @@ router.post('/analyze/details', async (req, res) => {
 // Student: Match job description
 router.post('/match-job', async (req, res) => {
   try {
-    const { username, jobDescription } = req.body;
+    const { username, jobDescription, provider, model } = req.body;
     if (!username || !jobDescription) {
       return res.status(400).json({ message: 'Username and job description are required' });
     }
@@ -141,11 +154,13 @@ router.post('/match-job', async (req, res) => {
       confidence: Math.round((count / maxCount) * 100),
     }));
 
-    const result = await matchJobDescription(username, profile, technologies, jobDescription);
+    const result = await matchJobDescription(username, profile, technologies, jobDescription, { provider, model });
     res.json(result);
   } catch (error) {
-    console.error('Job match error:', error.message);
-    res.status(500).json({ message: 'Job matching failed. Please try again.' });
+    console.error('Job match error:', error?.message, { username, provider: req.body?.provider, model: req.body?.model, response: error?.response?.data });
+    if (error.response?.status === 404) return res.status(404).json({ message: 'GitHub user not found' });
+    if (error.response?.status === 403) return res.status(429).json({ message: 'API rate limit exceeded. Please try again later.' });
+    res.status(500).json({ message: `Job matching failed: ${error.message || 'unknown error'}` });
   }
 });
 
@@ -201,7 +216,8 @@ router.post('/recruiter/evaluate', authMiddleware, async (req, res) => {
       repos.slice(0, 10).map((repo) => analyzeRepository(cleanUsername, repo))
     );
 
-    const result = await evaluateCandidateForRecruiter(cleanUsername, profile, analyzedRepos, activity);
+    const { provider, model } = req.body;
+    const result = await evaluateCandidateForRecruiter(cleanUsername, profile, analyzedRepos, { provider, model });
     const totalCommitCount = analyzedRepos.reduce((total, repo) => total + (repo.commitCount || 0), 0);
     const commitCountAvailable = analyzedRepos.some((repo) => typeof repo.commitCount === 'number');
     const documentationCoverage = analyzedRepos.length ? Math.round(analyzedRepos.filter((repo) => repo.hasReadme).length / analyzedRepos.length * 100) : 0;
@@ -245,9 +261,12 @@ router.post('/recruiter/evaluate', authMiddleware, async (req, res) => {
       evidence: { ...evidence, ...(result.evidence || {}) },
     });
   } catch (error) {
-    console.error('Evaluation error:', error.message);
+    console.error('Evaluation error:', error?.message, { username: req.body?.username, provider: req.body?.provider, model: req.body?.model, stack: error?.stack, response: error?.response?.data });
     if (error.response?.status === 404) {
       return res.status(404).json({ message: 'GitHub user not found' });
+    }
+    if (error.response?.status === 403) {
+      return res.status(429).json({ message: 'API rate limit exceeded. Please try again later.' });
     }
     res.status(500).json({ message: 'Evaluation failed. Please try again.' });
   }

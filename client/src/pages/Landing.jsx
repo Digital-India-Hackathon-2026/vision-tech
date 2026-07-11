@@ -1,6 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+const MODEL_PROVIDERS = ['gemini', 'openai', 'grok'];
+const MODEL_OPTIONS = {
+  gemini: ['default'],
+  openai: ['gpt-4.1-mini', 'gpt-4o-mini', 'gpt-3.5-turbo'],
+  grok: ['grok-1'],
+};
+
 function extractUsername(input) {
   const trimmed = input.trim();
   // If it's a GitHub URL like https://github.com/username
@@ -14,6 +21,8 @@ function extractUsername(input) {
 function Landing() {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
+  const [provider, setProvider] = useState('gemini');
+  const [model, setModel] = useState(MODEL_OPTIONS.gemini[0]);
   const navigate = useNavigate();
 
   const handleAnalyze = (e) => {
@@ -24,7 +33,7 @@ function Landing() {
       setError('Enter a valid GitHub username or URL (e.g., HAREESSHP or https://github.com/HAREESSHP)');
       return;
     }
-    navigate(`/dashboard/${username}`);
+    navigate(`/dashboard/${username}?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}`);
   };
 
   return (
@@ -40,11 +49,37 @@ function Landing() {
             </p>
             <form className="hero-search" onSubmit={handleAnalyze}>
               <input
+                id="landing-username"
+                name="username"
                 type="text"
                 placeholder="GitHub username or profile URL..."
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
               />
+              <div className="model-selection-row">
+                <label className="select-field">
+                  <span>Provider</span>
+                  <select id="landing-provider" name="provider" value={provider} onChange={(e) => {
+                    setProvider(e.target.value);
+                    setModel(MODEL_OPTIONS[e.target.value][0]);
+                  }}>
+                    {MODEL_PROVIDERS.map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </label>
+                {MODEL_OPTIONS[provider].length > 1 ? (
+                  <label className="select-field">
+                    <span>Model</span>
+                    <select id="landing-model" name="model" value={model} onChange={(e) => setModel(e.target.value)}>
+                      {MODEL_OPTIONS[provider].map((item) => <option key={item} value={item}>{item}</option>)}
+                    </select>
+                  </label>
+                ) : (
+                  <div className="select-field fixed-model">
+                    <span>Model</span>
+                    <div id="landing-model" className="fixed-model-value">{MODEL_OPTIONS[provider][0]}</div>
+                  </div>
+                )}
+              </div>
               <button type="submit" disabled={!input.trim()}>
                 Analyze Profile
               </button>

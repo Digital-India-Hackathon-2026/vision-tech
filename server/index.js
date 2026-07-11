@@ -50,12 +50,16 @@ app.use((err, req, res, next) => {
 // Connect to MongoDB and start server
 async function start() {
   try {
-    if (process.env.MONGODB_URI) {
-      await mongoose.connect(process.env.MONGODB_URI);
+    const mongoUri = process.env.MONGODB_URI;
+    if (mongoUri) {
+      await mongoose.connect(mongoUri, {
+        serverSelectionTimeoutMS: 10000,
+        socketTimeoutMS: 45000,
+      });
       console.log('Connected to MongoDB');
     } else {
-      console.log('MongoDB URI not provided - running without database');
-      console.log('Auth features will be unavailable');
+      console.warn('MongoDB URI not provided - running without database');
+      console.warn('Auth features will be unavailable');
     }
 
     app.listen(PORT, () => {
@@ -63,11 +67,8 @@ async function start() {
       console.log(`Health check: http://localhost:${PORT}/health`);
     });
   } catch (error) {
-    console.error('Failed to start server:', error.message);
-    // Start server even without DB for development
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT} (without database)`);
-    });
+    console.error('Failed to start server:', error);
+    process.exit(1);
   }
 }
 

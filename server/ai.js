@@ -1,14 +1,25 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const GEMINI_API_KEYS = Array.from(
+  new Set([
+    ...(process.env.GEMINI_API_KEYS?.split(',').map((key) => key.trim()).filter(Boolean) || []),
+    ...(process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY.trim()] : []),
+  ]).values()
+);
 
-const MODEL_CANDIDATES = [
-  'gemini-3.5-flash',
-  'gemini-flash-latest',
-  'gemini-2.5-flash-lite',
-  'gemini-2.0-flash-lite',
-  'gemini-2.0-flash',
-];
+if (!GEMINI_API_KEYS.length) {
+  console.warn('Warning: No Gemini API key configured. Gemini requests may fail.');
+}
+
+const MODEL_CANDIDATES = (process.env.GEMINI_MODEL_CANDIDATES
+  ? process.env.GEMINI_MODEL_CANDIDATES.split(',').map((name) => name.trim()).filter(Boolean)
+  : [
+      'gemini-3.5-flash',
+      'gemini-flash-latest',
+      'gemini-2.5-flash-lite',
+      'gemini-2.0-flash-lite',
+      'gemini-2.0-flash',
+    ]);
 
 function extractJsonText(text) {
   let cleaned = text.trim();
@@ -66,6 +77,14 @@ function scoreRepository(repo) {
   score += repo.hasCiCd ? 8 : 0;
   score += repo.hasLicense ? 3 : 0;
   score += Object.keys(repo.languages || {}).length > 1 ? 5 : 0;
+  score += Math.min((repo.commitCount || 0) / 10, 12);
+  if (typeof repo.lastCommitAgeDays === 'number') {
+    if (repo.lastCommitAgeDays <= 30) score += 10;
+    else if (repo.lastCommitAgeDays <= 90) score += 6;
+    else if (repo.lastCommitAgeDays <= 180) score += 3;
+  }
+  score += (repo.contributorCount || 0) > 1 ? 5 : 0;
+  score += repo.defaultBranchProtected ? 3 : 0;
 
   return Math.max(0, Math.min(100, Math.round(score)));
 }
@@ -236,7 +255,7 @@ function getStudentPrompt(username, profile, repos) {
     .slice(0, 10)
     .map(
       (r) =>
-        `- ${r.name}: ${r.description || 'No description'}, Language: ${r.language || 'N/A'}, Stars: ${r.stargazers_count}, Forks: ${r.forks_count}, Has README: ${r.hasReadme}, Has Tests: ${r.hasTests}, Technologies: ${(r.technologies || []).join(', ')}`
+        `- ${r.name}: ${r.description || 'No description'}, Language: ${r.language || 'N/A'}, Stars: ${r.stargazers_count}, Forks: ${r.forks_count}, Commits: ${r.commitCount ?? 'N/A'}, Last commit: ${r.lastCommitDate || 'N/A'}, Open PRs: ${r.openPullRequestCount ?? 'N/A'}, Open issues: ${r.openIssueCount ?? 'N/A'}, Contributors: ${r.contributorCount ?? 'N/A'}, License: ${r.license?.name || 'None'}, Topics: ${(r.topics || []).join(', ') || 'None'}, Has README: ${r.hasReadme}, Has Tests: ${r.hasTests}, Has CI/CD: ${r.hasCiCd}, Technologies: ${(r.technologies || []).join(', ')}`
     )
     .join('\n');
 
@@ -377,27 +396,43 @@ For Experienced use: Architecture (20%), Engineering (25%), Open Source (20%), D
 `;
 }
 
-async function callGemini(prompt) {
+async function callGemini(prompt, options = {}) {
+  const preferredModel = options.model?.trim();
+  const modelCandidates = preferredModel
+    ? [preferredModel, ...MODEL_CANDIDATES.filter((model) => model !== preferredModel)]
+    : MODEL_CANDIDATES;
+
+  const apiKeys = (options.apiKeys || GEMINI_API_KEYS).map((key) => key.trim()).filter(Boolean);
+  if (!apiKeys.length) {
+    throw new Error('No Gemini API key configured');
+  }
+
   let lastError = null;
 
-  for (const modelName of MODEL_CANDIDATES) {
-    try {
-      const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent(prompt);
-      const response = result.response;
-      const text = response.text();
+  for (const apiKey of apiKeys) {
+    const client = new GoogleGenerativeAI(apiKey);
 
-      const cleaned = extractJsonText(text);
+    for (const modelName of modelCandidates) {
+      try {
+        const model = client.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent(prompt);
+        const response = result.response;
+        const text = response.text();
 
-      return JSON.parse(cleaned);
-    } catch (error) {
-      lastError = error;
-      const status = error?.status || error?.response?.status;
-      if (status === 429 || /quota|rate limit/i.test(error?.message || '')) {
-        break;
-      }
-      if (status && ![404, 503].includes(status)) {
-        break;
+        const cleaned = extractJsonText(text);
+        return JSON.parse(cleaned);
+      } catch (error) {
+        lastError = error;
+        const status = error?.status || error?.response?.status;
+        const message = error?.message || '';
+        const isQuotaError = status === 429 || /quota|rate limit|rate-limit|over limit/i.test(message);
+        const isAuthError = status === 401 || status === 403;
+        if (isQuotaError || isAuthError) {
+          break; // move to the next API key
+        }
+        if (status && ![404, 503].includes(status)) {
+          break; // avoid retrying the same model on non-retryable server errors
+        }
       }
     }
   }
@@ -409,33 +444,33 @@ async function callGemini(prompt) {
   throw lastError || new Error('Gemini request failed');
 }
 
-export async function analyzeStudentProfile(username, profile, repos) {
+export async function analyzeStudentProfile(username, profile, repos, options = {}) {
   const prompt = getStudentPrompt(username, profile, repos);
 
   try {
-    return await callGemini(prompt);
+    return await callGemini(prompt, options);
   } catch (error) {
     console.warn(`Gemini student analysis unavailable; using repository-based fallback: ${error.message}`);
     return buildStudentFallback(username, profile, repos);
   }
 }
 
-export async function matchJobDescription(username, profile, technologies, jobDescription) {
+export async function matchJobDescription(username, profile, technologies, jobDescription, options = {}) {
   const prompt = getJobMatchPrompt(username, profile, technologies, jobDescription);
 
   try {
-    return await callGemini(prompt);
+    return await callGemini(prompt, options);
   } catch (error) {
     console.warn(`Gemini job matching unavailable; using stack-based fallback: ${error.message}`);
     return buildJobMatchFallback(profile, technologies, jobDescription);
   }
 }
 
-export async function evaluateCandidateForRecruiter(username, profile, repos) {
+export async function evaluateCandidateForRecruiter(username, profile, repos, options = {}) {
   const prompt = getRecruiterPrompt(username, profile, repos);
 
   try {
-    return await callGemini(prompt);
+    return await callGemini(prompt, options);
   } catch (error) {
     console.warn(`Gemini recruiter evaluation unavailable; using repository-based fallback: ${error.message}`);
     return buildRecruiterFallback(username, profile, repos);
